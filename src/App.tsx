@@ -46,6 +46,7 @@ type ReservationRow = {
   scheduled_at: string
   status: ReservationStatus
   created_at: string
+  requested_note?: string | null
 }
 
 type TripType = 'one_way' | 'round_trip'
@@ -82,6 +83,10 @@ function formatScheduledAt(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function patientNameFromNote(value: string | null | undefined) {
+  return value?.match(/^환자명:\s*(.+)$/m)?.[1]?.trim() ?? ''
 }
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
@@ -391,16 +396,19 @@ function ApprovalManagement() {
 function ReservationForm({
   session,
   hospitalId,
-  onCancel,
   onCreated,
 }: {
   session: Session | null
   hospitalId: string | null
-  onCancel: () => void
   onCreated: () => void
 }) {
+  const [patientName, setPatientName] = useState('')
   const [departure, setDeparture] = useState('')
   const [destination, setDestination] = useState('')
+  const [guardianPhone, setGuardianPhone] = useState('')
+  const [infectionStatus, setInfectionStatus] = useState('확인 필요')
+  const [oxygenRequired, setOxygenRequired] = useState(false)
+  const [companionRequired, setCompanionRequired] = useState(false)
   const [scheduledAt, setScheduledAt] = useState(() => localDateTimeValue(new Date(Date.now() + 60 * 60_000)))
   const [tripType, setTripType] = useState<TripType>('one_way')
   const [waitingRequired, setWaitingRequired] = useState(false)
@@ -419,6 +427,16 @@ function ReservationForm({
     }
     setBusy(true)
     setError('')
+    const patientDetails = [
+      '[환자 정보]',
+      `환자명: ${patientName.trim()}`,
+      `보호자 연락처: ${guardianPhone.trim()}`,
+      `감염 여부: ${infectionStatus}`,
+      `산소 사용 여부: ${oxygenRequired ? '필요' : '불필요'}`,
+      `동승 여부: ${companionRequired ? '필요' : '불필요'}`,
+    ].join('\n')
+    const fullRequestNote = [patientDetails, requestedNote.trim() ? `[추가 요청]\n${requestedNote.trim()}` : '']
+      .filter(Boolean).join('\n\n')
     try {
       const { error: insertError } = await supabase.from('reservations').insert({
         hospital_id: hospitalId,
@@ -429,13 +447,25 @@ function ReservationForm({
         trip_type: tripType,
         waiting_required: waitingRequired,
         waiting_minutes: waitingRequired ? Number(waitingMinutes) : 0,
-        requested_note: requestedNote.trim() || null,
+        requested_note: fullRequestNote,
         status: 'requested',
       })
       if (insertError) {
         setError('예약 접수에 실패했습니다. 로그인 계정의 병원 정보와 예약 권한을 확인해 주세요.')
         return
       }
+      setPatientName('')
+      setDeparture('')
+      setDestination('')
+      setGuardianPhone('')
+      setInfectionStatus('확인 필요')
+      setOxygenRequired(false)
+      setCompanionRequired(false)
+      setScheduledAt(localDateTimeValue(new Date(Date.now() + 60 * 60_000)))
+      setTripType('one_way')
+      setWaitingRequired(false)
+      setWaitingMinutes('0')
+      setRequestedNote('')
       onCreated()
     } catch {
       setError('Supabase에 연결하지 못했습니다. 연결 설정을 확인해 주세요.')
@@ -449,25 +479,29 @@ function ReservationForm({
   return (
     <section className="panel reservation-form-panel">
       <div className="panel-heading form-panel-heading">
-        <div><p className="eyebrow">NEW TRANSPORT REQUEST</p><h2>신규 이송 예약</h2><p>필수 정보를 입력하면 예약 요청으로 접수됩니다.</p></div>
-        <button className="form-close-button" type="button" onClick={onCancel} aria-label="예약 작성 닫기">×</button>
+        <div><p className="eyebrow">NEW TRANSPORT REQUEST</p><h2>신규 이송 예약</h2><p>환자 및 이송 정보를 입력해 예약 요청을 접수합니다.</p></div>
       </div>
       {!canSubmit && <div className="form-info-banner"><span className="connection-indicator" /><span>{!supabase ? '미리보기 화면입니다. Supabase 설정과 로그인을 완료한 뒤 접수할 수 있습니다.' : !session ? '병원 직원 계정으로 로그인해야 접수할 수 있습니다.' : '로그인 계정에 연결된 병원 프로필이 필요합니다.'}</span></div>}
       <form className="reservation-form" onSubmit={handleSubmit}>
         <div className="form-grid">
-          <label className="form-field"><span>출발 주소 <b>필수</b></span><input value={departure} onChange={(event) => setDeparture(event.target.value)} placeholder="예: 서울시 ○○구 ○○로 00, ○○병원" required /></label>
-          <label className="form-field"><span>목적지 주소 <b>필수</b></span><input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="예: 서울시 ○○구 ○○로 00, ○○병원" required /></label>
-          <label className="form-field"><span>이송 희망 일시 <b>필수</b></span><input type="datetime-local" min={minDateTime} value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} required /></label>
+          <label className="form-field"><span>환자명 <b>필수</b></span><input value={patientName} onChange={(event) => setPatientName(event.target.value)} autoComplete="off" maxLength={100} placeholder="환자 이름" required /></label>
+          <label className="form-field"><span>보호자 연락처 <b>필수</b></span><input type="tel" autoComplete="tel" value={guardianPhone} onChange={(event) => setGuardianPhone(event.target.value)} maxLength={30} placeholder="010-0000-0000" required /></label>
+          <label className="form-field"><span>출발지 <b>필수</b></span><input value={departure} onChange={(event) => setDeparture(event.target.value)} maxLength={300} placeholder="예: 서울시 ○○구 ○○로 00, ○○병원" required /></label>
+          <label className="form-field"><span>목적지 <b>필수</b></span><input value={destination} onChange={(event) => setDestination(event.target.value)} maxLength={300} placeholder="예: 서울시 ○○구 ○○로 00, ○○병원" required /></label>
+          <label className="form-field"><span>출발 시각 <b>필수</b></span><input type="datetime-local" min={minDateTime} value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} required /></label>
+          <label className="form-field"><span>감염 여부</span><select value={infectionStatus} onChange={(event) => setInfectionStatus(event.target.value)}><option value="확인 필요">확인 필요</option><option value="없음">없음</option><option value="있음">있음</option></select></label>
+          <label className="form-field"><span>산소 사용 여부</span><select value={oxygenRequired ? 'yes' : 'no'} onChange={(event) => setOxygenRequired(event.target.value === 'yes')}><option value="no">필요 없음</option><option value="yes">필요함</option></select></label>
+          <label className="form-field"><span>동승 여부</span><select value={companionRequired ? 'yes' : 'no'} onChange={(event) => setCompanionRequired(event.target.value === 'yes')}><option value="no">동승자 없음</option><option value="yes">동승자 있음</option></select></label>
           <label className="form-field"><span>운행 유형</span><select value={tripType} onChange={(event) => setTripType(event.target.value as TripType)}><option value="one_way">편도</option><option value="round_trip">왕복</option></select></label>
           <div className="form-field waiting-field">
             <span>현장 대기</span>
             <label className="checkbox-line"><input type="checkbox" checked={waitingRequired} onChange={(event) => setWaitingRequired(event.target.checked)} /><span>현장 대기가 필요합니다</span></label>
           </div>
           {waitingRequired && <label className="form-field"><span>대기 시간 (분)</span><input type="number" min="0" max="1440" step="15" value={waitingMinutes} onChange={(event) => setWaitingMinutes(event.target.value)} required /></label>}
-          <label className="form-field note-field"><span>요청 메모 <small>선택</small></span><textarea value={requestedNote} onChange={(event) => setRequestedNote(event.target.value)} rows={3} maxLength={500} placeholder="운행 담당자에게 전달할 내용을 입력하세요." /></label>
+          <label className="form-field note-field"><span>추가 요청 메모 <small>선택</small></span><textarea value={requestedNote} onChange={(event) => setRequestedNote(event.target.value)} rows={3} maxLength={300} placeholder="운행 담당자에게 전달할 내용을 입력하세요." /></label>
         </div>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <div className="form-footer"><p>접수 후 배차 담당자가 내용을 확인합니다.</p><div><button className="form-cancel-button" type="button" onClick={onCancel}>취소</button><button className="primary-button" type="submit" disabled={!canSubmit || busy}>{busy ? '접수 중…' : '예약 요청 접수'}</button></div></div>
+        <div className="form-footer"><p>환자 정보와 연락처는 예약 요청 메모(requested_note)에 함께 저장됩니다.</p><div><button className="primary-button" type="submit" disabled={!canSubmit || busy}>{busy ? '접수 중…' : '예약 요청 접수'}</button></div></div>
       </form>
     </section>
   )
@@ -498,28 +532,27 @@ function ReservationManagement({
   onLoadMore: () => void
   onRefresh: () => void
 }) {
-  const [showForm, setShowForm] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [notice, setNotice] = useState('')
   const canRequest = !supabaseConfigured || profileRole === 'hospital_staff' || profileRole === 'hospital_admin'
   const filteredReservations = reservations.filter((reservation) => {
-    const matchesSearch = `${reservation.id} ${reservation.departure_address} ${reservation.destination_address}`.toLowerCase().includes(searchText.toLowerCase())
+    const matchesSearch = `${reservation.id} ${patientNameFromNote(reservation.requested_note)} ${reservation.departure_address} ${reservation.destination_address}`.toLowerCase().includes(searchText.toLowerCase())
     return matchesSearch && (statusFilter === 'all' || reservation.status === statusFilter)
   })
 
   return (
     <>
       <section className="page-heading reservation-page-heading">
-        <div><p className="eyebrow">HOSPITAL WORKSPACE</p><h1>이송 예약 관리</h1><p className="heading-subtitle">접수한 이송 요청을 확인하고 새 예약을 등록합니다.</p></div>
-        {canRequest && <button className="primary-button" type="button" onClick={() => { setNotice(''); setShowForm((value) => !value) }}><span className="button-plus">＋</span>{showForm ? '작성 취소' : '신규 예약'}</button>}
+        <div><p className="eyebrow">HOSPITAL WORKSPACE</p><h1>이송 예약 관리</h1><p className="heading-subtitle">왼쪽에서 이송을 신청하고 오른쪽에서 예약 현황을 확인합니다.</p></div>
       </section>
 
       {!supabaseConfigured && <div className="connection-banner" role="status"><span className="connection-indicator" /><div className="connection-copy"><strong>화면 미리보기</strong><span>실제 예약 정보 없이 병원 직원 화면을 미리 볼 수 있습니다. DB 연결 후 권한에 맞는 예약만 표시됩니다.</span></div></div>}
       {notice && <div className="success-banner" role="status"><span>✓</span>{notice}</div>}
-      {showForm && <ReservationForm session={session} hospitalId={hospitalId} onCancel={() => setShowForm(false)} onCreated={() => { setShowForm(false); setNotice('예약 요청이 접수되었습니다.'); onRefresh() }} />}
 
-      <section className="panel reservation-management-panel">
+      <div className={`reservation-workspace-grid${canRequest ? '' : ' list-only'}`}>
+        {canRequest && <ReservationForm session={session} hospitalId={hospitalId} onCreated={() => { setNotice('예약 요청이 접수되었습니다.'); onRefresh() }} />}
+        <section className="panel reservation-management-panel">
         <div className="management-toolbar">
           <div><h2>예약 목록</h2><p>{loading ? '불러오는 중…' : `${reservations.length}건 표시 · 현재 계정에 허용된 예약`}</p></div>
           <div className="reservation-filters">
@@ -533,14 +566,15 @@ function ReservationManagement({
             <tbody>
               {loading ? <tr><td colSpan={5}><div className="table-empty"><strong>예약 목록을 불러오고 있습니다…</strong></div></td></tr>
                 : error ? <tr><td colSpan={5}><div className="table-empty"><strong>{error}</strong><span>테이블과 RLS 정책은 변경하지 않았습니다.</span></div></td></tr>
-                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span></td><td className="address-cell">{reservation.departure_address}</td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td></tr>)
+                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}</td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td></tr>)
                     : <tr><td colSpan={5}><div className="table-empty"><span className="table-empty-icon"><Icon name="calendar" size={20} /></span><strong>{searchText || statusFilter !== 'all' ? '검색 조건에 맞는 예약이 없습니다' : '접수된 예약이 없습니다'}</strong><span>예약 요청을 접수하면 이 목록에서 진행 상태를 확인할 수 있습니다.</span></div></td></tr>}
             </tbody>
           </table>
         </div>
         {reservations.length > 0 && <div className="management-footer"><span>검색은 현재 불러온 기록에서 찾습니다. 표시 데이터는 계정 권한에 따라 제한됩니다.</span><div className="management-footer-actions">{hasMore && <button className="subtle-button" type="button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? '불러오는 중…' : '이전 예약 더 불러오기'}</button>}<button className="subtle-button" type="button" onClick={onRefresh}>새로고침</button></div></div>}
         {loadMoreError && <p className="form-error pagination-error" role="alert">{loadMoreError}</p>}
-      </section>
+        </section>
+      </div>
       {supabaseConfigured && session && !canRequest && <p className="role-note">예약 접수는 병원 담당자 계정에서 사용할 수 있습니다. 현재 계정은 예약 조회 전용으로 표시됩니다.</p>}
     </>
   )
@@ -657,7 +691,7 @@ function App() {
       }
       setProfileState('ready')
 
-      const reservationColumns = 'id, departure_address, destination_address, scheduled_at, status, created_at'
+      const reservationColumns = 'id, departure_address, destination_address, scheduled_at, status, created_at, requested_note'
       const [reservationResult, upcomingResult] = await Promise.all([
         client.from('reservations').select(reservationColumns)
           .order('created_at', { ascending: false }).order('id', { ascending: true }).limit(25),
@@ -729,7 +763,7 @@ function App() {
     try {
       const start = reservations.length
       const { data, error } = await supabase.from('reservations')
-        .select('id, departure_address, destination_address, scheduled_at, status, created_at')
+        .select('id, departure_address, destination_address, scheduled_at, status, created_at, requested_note')
         .order('created_at', { ascending: false }).order('id', { ascending: true }).range(start, start + 24)
       if (error) throw error
       const nextRows = (data ?? []) as ReservationRow[]
