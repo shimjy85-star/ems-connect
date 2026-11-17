@@ -424,6 +424,10 @@ function ReservationManagement({
   reservations,
   loading,
   error,
+  hasMore,
+  loadingMore,
+  loadMoreError,
+  onLoadMore,
   onRefresh,
 }: {
   session: Session | null
@@ -432,6 +436,10 @@ function ReservationManagement({
   reservations: ReservationRow[]
   loading: boolean
   error: string
+  hasMore: boolean
+  loadingMore: boolean
+  loadMoreError: string
+  onLoadMore: () => void
   onRefresh: () => void
 }) {
   const [showForm, setShowForm] = useState(false)
@@ -457,7 +465,7 @@ function ReservationManagement({
 
       <section className="panel reservation-management-panel">
         <div className="management-toolbar">
-          <div><h2>예약 목록</h2><p>{loading ? '불러오는 중…' : `${reservations.length}건 · 현재 계정에 허용된 예약`}</p></div>
+          <div><h2>예약 목록</h2><p>{loading ? '불러오는 중…' : `${reservations.length}건 표시 · 현재 계정에 허용된 예약`}</p></div>
           <div className="reservation-filters">
             <label className="search-field"><Icon name="search" size={16} /><input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="주소 또는 예약 번호 검색" /></label>
             <select aria-label="예약 상태 필터" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">전체 상태</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
@@ -474,7 +482,8 @@ function ReservationManagement({
             </tbody>
           </table>
         </div>
-        {reservations.length > 0 && <div className="management-footer"><span>표시된 데이터는 RLS 정책에 따라 제한됩니다.</span><button className="subtle-button" type="button" onClick={onRefresh}>새로고침</button></div>}
+        {reservations.length > 0 && <div className="management-footer"><span>검색은 현재 불러온 기록에서 찾습니다. 표시 데이터는 계정 권한에 따라 제한됩니다.</span><div className="management-footer-actions">{hasMore && <button className="subtle-button" type="button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? '불러오는 중…' : '이전 예약 더 불러오기'}</button>}<button className="subtle-button" type="button" onClick={onRefresh}>새로고침</button></div></div>}
+        {loadMoreError && <p className="form-error pagination-error" role="alert">{loadMoreError}</p>}
       </section>
       {supabaseConfigured && session && !canRequest && <p className="role-note">예약 접수는 병원 담당자 계정에서 사용할 수 있습니다. 현재 계정은 예약 조회 전용으로 표시됩니다.</p>}
     </>
@@ -496,6 +505,9 @@ function App() {
   const [profileHospitalId, setProfileHospitalId] = useState<string | null>(null)
   const [profileState, setProfileState] = useState<'loading' | 'ready' | 'pending' | 'inactive' | 'missing'>('loading')
   const [reservations, setReservations] = useState<ReservationRow[]>([])
+  const [hasMoreReservations, setHasMoreReservations] = useState(false)
+  const [loadingMoreReservations, setLoadingMoreReservations] = useState(false)
+  const [loadMoreError, setLoadMoreError] = useState('')
   const [nextReservation, setNextReservation] = useState<ReservationRow | null>(null)
   const [upcomingError, setUpcomingError] = useState(false)
   const [reservationCounts, setReservationCounts] = useState({ today: null as number | null, pending: null as number | null, confirmed: null as number | null, inProgress: null as number | null, availableVehicles: null as number | null })
@@ -583,7 +595,7 @@ function App() {
       const reservationColumns = 'id, departure_address, destination_address, scheduled_at, status, created_at'
       const [reservationResult, upcomingResult] = await Promise.all([
         client.from('reservations').select(reservationColumns)
-          .order('created_at', { ascending: false }).limit(25),
+          .order('created_at', { ascending: false }).order('id', { ascending: true }).limit(25),
         client.from('reservations').select(reservationColumns)
           .gte('scheduled_at', new Date().toISOString()).order('scheduled_at', { ascending: true }).limit(25),
       ])
@@ -601,6 +613,8 @@ function App() {
 
       const rows = (reservationResult.data ?? []) as ReservationRow[]
       setReservations(rows)
+      setHasMoreReservations(rows.length === 25)
+      setLoadMoreError('')
       const upcomingRows = (upcomingResult.data ?? []) as ReservationRow[]
       setUpcomingError(Boolean(upcomingResult.error))
       setNextReservation(upcomingRows.find((reservation) => !['completed', 'rejected', 'cancelled'].includes(reservation.status)) ?? null)
@@ -642,6 +656,26 @@ function App() {
 
     return () => { active = false }
   }, [session, refreshKey])
+
+  const loadMoreReservations = useCallback(async () => {
+    if (!supabase || loadingMoreReservations || !hasMoreReservations) return
+    setLoadingMoreReservations(true)
+    setLoadMoreError('')
+    try {
+      const start = reservations.length
+      const { data, error } = await supabase.from('reservations')
+        .select('id, departure_address, destination_address, scheduled_at, status, created_at')
+        .order('created_at', { ascending: false }).order('id', { ascending: true }).range(start, start + 24)
+      if (error) throw error
+      const nextRows = (data ?? []) as ReservationRow[]
+      setReservations((current) => [...current, ...nextRows])
+      setHasMoreReservations(nextRows.length === 25)
+    } catch {
+      setLoadMoreError('이전 예약을 불러오지 못했습니다. 연결 상태와 계정 권한을 확인한 뒤 다시 시도해 주세요.')
+    } finally {
+      setLoadingMoreReservations(false)
+    }
+  }, [hasMoreReservations, loadingMoreReservations, reservations.length])
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -696,6 +730,8 @@ function App() {
     setProfileHospitalId(null)
     setProfileState('ready')
     setReservations([])
+    setHasMoreReservations(false)
+    setLoadMoreError('')
     setNextReservation(null)
     setUpcomingError(false)
     setReservationError('')
@@ -876,6 +912,10 @@ function App() {
               reservations={reservations}
               loading={reservationLoading}
               error={reservationError}
+              hasMore={hasMoreReservations}
+              loadingMore={loadingMoreReservations}
+              loadMoreError={loadMoreError}
+              onLoadMore={() => void loadMoreReservations()}
               onRefresh={() => setRefreshKey((value) => value + 1)}
             />
           ) : (
