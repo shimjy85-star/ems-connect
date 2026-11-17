@@ -13,6 +13,8 @@ const mainNav: NavItem[] = [
   { label: '예약 관리', icon: 'calendar' },
 ]
 
+const hospitalNav: NavItem[] = [mainNav[1]]
+
 type StatKey = 'today' | 'pending' | 'confirmed' | 'inProgress' | 'availableVehicles'
 
 type DashboardStat = {
@@ -584,7 +586,7 @@ function ReservationManagement({
 }
 
 function App() {
-  const [activePage, setActivePage] = useState('대시보드')
+  const [adminActivePage, setAdminActivePage] = useState('대시보드')
   const [session, setSession] = useState<Session | null>(null)
   const [authLoading, setAuthLoading] = useState(supabaseConfigured)
   const [passwordRecovery, setPasswordRecovery] = useState(false)
@@ -599,6 +601,9 @@ function App() {
   const [loginBusy, setLoginBusy] = useState(false)
   const [profileName, setProfileName] = useState('운영자')
   const [profileRole, setProfileRole] = useState('')
+  const dashboardIsAdmin = profileRole === 'admin'
+  const activePage = dashboardIsAdmin ? adminActivePage : '예약 관리'
+  const setActivePage = setAdminActivePage
   const [profileHospitalId, setProfileHospitalId] = useState<string | null>(null)
   const [profileState, setProfileState] = useState<'loading' | 'ready' | 'pending' | 'inactive' | 'missing'>('loading')
   const [reservations, setReservations] = useState<ReservationRow[]>([])
@@ -892,7 +897,7 @@ function App() {
     setReservationCounts({ today: null, pending: null, confirmed: null, inProgress: null, availableVehicles: null })
   }
 
-  const dashboardIsAdmin = profileRole === 'admin'
+  const sidebarNav = dashboardIsAdmin ? mainNav : hospitalNav
   const dashboardStats = dashboardIsAdmin ? adminStats : hospitalStats
   if (authLoading) {
     return <main className="auth-loading"><span className="loading-spinner" /><p>로그인 상태를 확인하고 있습니다.</p></main>
@@ -913,20 +918,20 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#dashboard" onClick={() => setActivePage('대시보드')}>
+        <a className="brand" href={dashboardIsAdmin ? '#dashboard' : '#reservations'} onClick={() => setActivePage(dashboardIsAdmin ? '대시보드' : '예약 관리')}>
           <span className="brand-mark"><Icon name="ambulance" size={22} /></span>
           <span className="brand-copy"><strong>EMS CONNECT</strong><small>응급 이송 통합 관리</small></span>
         </a>
 
         <div className="workspace-switcher">
           <span className="workspace-avatar">E</span>
-          <span className="workspace-copy"><strong>{session && profileRole !== 'admin' ? '병원 워크스페이스' : 'EMS 운영센터'}</strong><small>{session && profileRole !== 'admin' ? '병원 업무 공간' : '운영 워크스페이스'}</small></span>
+          <span className="workspace-copy"><strong>{dashboardIsAdmin ? 'EMS 운영센터' : '병원 워크스페이스'}</strong><small>{dashboardIsAdmin ? '운영 워크스페이스' : '병원 업무 공간'}</small></span>
           <span className="switcher-chevron">⌄</span>
         </div>
 
         <nav className="sidebar-nav" aria-label="주 메뉴">
-          <p className="nav-label">업무</p>
-          {mainNav.map((item) => <NavButton key={item.label} item={item} active={activePage === item.label} onClick={() => setActivePage(item.label)} />)}
+          <p className="nav-label">{dashboardIsAdmin ? '업무' : '병원 업무'}</p>
+          {sidebarNav.map((item) => <NavButton key={item.label} item={item} active={activePage === item.label} onClick={() => setActivePage(item.label)} />)}
           {profileRole === 'admin' && <><p className="nav-label">관리</p><NavButton item={{ label: '가입 승인', icon: 'history' }} active={activePage === '가입 승인'} onClick={() => setActivePage('가입 승인')} /></>}
         </nav>
 
@@ -941,7 +946,7 @@ function App() {
 
       <main className="main-content">
         <header className="topbar">
-          <div className="breadcrumb"><span>EMS 운영</span><span className="breadcrumb-divider">/</span><strong>{activePage}</strong></div>
+          <div className="breadcrumb"><span>{dashboardIsAdmin ? 'EMS 운영' : '병원 업무'}</span><span className="breadcrumb-divider">/</span><strong>{activePage}</strong></div>
           <div className="topbar-actions">
             <span className="today-label">{today}</span>
             <button className="icon-button" type="button" aria-label="예약 목록 열기" title="예약 목록" onClick={() => setActivePage('예약 관리')}><Icon name="search" /></button>
@@ -954,7 +959,7 @@ function App() {
         <div className="page-wrap">
           {activePage === '가입 승인' && profileRole === 'admin' ? (
             <ApprovalManagement />
-          ) : activePage === '대시보드' ? (
+          ) : activePage === '대시보드' && dashboardIsAdmin ? (
             <>
               <section className="page-heading">
                 <div>
