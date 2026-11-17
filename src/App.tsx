@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import type { Session } from '@supabase/supabase-js'
 import './App.css'
 import { supabase, supabaseConfigured } from './lib/supabase'
+import { createXlsxBlob } from './lib/xlsx'
 
 type NavItem = {
   label: string
@@ -249,6 +250,45 @@ type ApprovalProfile = {
 
 type HospitalOption = { id: string; name: string }
 
+type HospitalHistoryRow = ReservationRow & { hospital_id: string }
+
+const KOREA_DAY_MS = 24 * 60 * 60 * 1000
+
+function koreanDateParts(value: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(value)
+  return Object.fromEntries(parts.map((part) => [part.type, part.value])) as { year: string; month: string; day: string }
+}
+
+function koreanWeekStart(value: Date) {
+  const parts = koreanDateParts(value)
+  const dateAtUtcMidnight = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day))
+  const weekday = new Date(dateAtUtcMidnight).getUTCDay()
+  const mondayAtUtcMidnight = dateAtUtcMidnight - ((weekday + 6) % 7) * KOREA_DAY_MS
+  return new Date(mondayAtUtcMidnight - 9 * 60 * 60 * 1000)
+}
+
+function koreanWeekLabel(start: Date) {
+  const end = new Date(start.getTime() + 6 * KOREA_DAY_MS)
+  const formatter = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric' })
+  return `${formatter.format(start)} – ${formatter.format(end)}`
+}
+
+function koreanWeekFilePart(start: Date) {
+  const midpoint = new Date(start.getTime() + 2 * KOREA_DAY_MS)
+  const parts = koreanDateParts(midpoint)
+  return `${parts.year}${parts.month}-${Math.ceil(Number(parts.day) / 7)}주차`
+}
+
+function noteValue(note: string | null | undefined, label: string) {
+  const safeLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return note?.match(new RegExp(`^${safeLabel}:\\s*(.*)$`, 'm'))?.[1]?.trim() ?? ''
+}
+
 function AccountGate({
   name,
   state,
@@ -391,6 +431,139 @@ function ApprovalManagement() {
             </>}
       </section>
       <p className="role-note">이 화면은 관리자 계정에서만 노출됩니다. 변경은 profiles 행의 병원·역할·활성 상태에만 적용됩니다.</p>
+    </>
+  )
+}
+
+function HospitalTransferHistory() {
+  const [weekStart, setWeekStart] = useState(() => koreanWeekStart(new Date()))
+  const [currentWeekStart] = useState(() => koreanWeekStart(new Date()))
+  const [hospitals, setHospitals] = useState<HospitalOption[]>([])
+  const [reservations, setReservations] = useState<HospitalHistoryRow[]>([])
+  const [loading, setLoading] = useState(Boolean(supabase))
+  const [error, setError] = useState(supabase ? '' : 'Supabase 연결이 필요합니다. 관리자 로그인 후 다시 확인해 주세요.')
+  const [refreshKey, setRefreshKey] = useState(0)
+  const isCurrentWeek = weekStart.getTime() >= currentWeekStart.getTime()
+  const weekStartTimestamp = weekStart.getTime()
+  const weekEndTimestamp = weekStartTimestamp + 7 * KOREA_DAY_MS
+  const weekFilePart = koreanWeekFilePart(weekStart)
+
+  useEffect(() => {
+    const client = supabase
+    if (!client) return
+
+    let active = true
+    const loadWeek = async () => {
+      try {
+        const hospitalResult = await client.from('hospitals').select('id, name').order('name')
+        if (hospitalResult.error) throw hospitalResult.error
+
+        const allRows: HospitalHistoryRow[] = []
+        for (let offset = 0; offset < 10_000; offset += 1_000) {
+          const { data, error: reservationError } = await client.from('reservations')
+            .select('id, hospital_id, departure_address, destination_address, scheduled_at, status, created_at, requested_note')
+            .gte('scheduled_at', new Date(weekStartTimestamp).toISOString()).lt('scheduled_at', new Date(weekEndTimestamp).toISOString())
+            .order('scheduled_at', { ascending: true }).range(offset, offset + 999)
+          if (reservationError) throw reservationError
+          const rows = (data ?? []) as HospitalHistoryRow[]
+          allRows.push(...rows)
+          if (rows.length < 1_000) break
+          if (offset === 9_000) throw new Error('주간 예약이 10,000건을 초과해 한 번에 불러올 수 없습니다.')
+        }
+
+        if (!active) return
+        setHospitals((hospitalResult.data ?? []) as HospitalOption[])
+        setReservations(allRows)
+      } catch {
+        if (!active) return
+        setError('병원별 이송 내역을 불러오지 못했습니다. 관리자 예약 조회 권한과 기존 RLS 설정을 확인해 주세요.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    void loadWeek()
+    return () => { active = false }
+  }, [weekStartTimestamp, weekEndTimestamp, refreshKey])
+
+  const downloadHospitalWeek = (hospital: HospitalOption) => {
+    const hospitalRows = reservations.filter((reservation) => reservation.hospital_id === hospital.id)
+    const headers = ['예약번호', '환자명', '출발지', '목적지', '출발시각', '보호자 연락처', '감염 여부', '산소 사용 여부', '동승 여부', '상태', '추가 요청']
+    const rows = hospitalRows.map((reservation) => [
+      reservation.id,
+      patientNameFromNote(reservation.requested_note),
+      reservation.departure_address,
+      reservation.destination_address,
+      new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(reservation.scheduled_at)),
+      noteValue(reservation.requested_note, '보호자 연락처'),
+      noteValue(reservation.requested_note, '감염 여부'),
+      noteValue(reservation.requested_note, '산소 사용 여부'),
+      noteValue(reservation.requested_note, '동승 여부'),
+      statusLabels[reservation.status] ?? reservation.status,
+      reservation.requested_note?.split('[추가 요청]')[1]?.trim() ?? '',
+    ])
+    const blob = createXlsxBlob(headers, rows)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    const safeHospitalName = hospital.name.replace(/[\\/:*?"<>|]/g, '_')
+    anchor.href = url
+    anchor.download = `${safeHospitalName}_${weekFilePart}.xlsx`
+    anchor.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  }
+
+  return (
+    <>
+      <section className="page-heading reservation-page-heading">
+        <div><p className="eyebrow">PLATFORM ADMIN</p><h1>업체별 이송내역</h1><p className="heading-subtitle">병원별 주간 예약을 확인하고 Excel 파일로 저장합니다.</p></div>
+        <button className="form-cancel-button" type="button" onClick={() => { setError(''); setLoading(true); setRefreshKey((value) => value + 1) }} disabled={loading}>새로고침</button>
+      </section>
+
+      <div className="connection-banner"><span className="connection-indicator" /><div className="connection-copy"><strong>주간 내역 · {reservations.length}건</strong><span>지난 주차의 예약은 기존 기록에서 자동으로 병원별 정리됩니다. 병원별 엑셀 저장 버튼을 눌러 파일을 내려받으세요.</span></div></div>
+
+      <section className="panel hospital-history-panel">
+        <div className="history-week-toolbar">
+          <button className="subtle-button" type="button" onClick={() => { setError(''); setLoading(true); setWeekStart((current) => new Date(current.getTime() - 7 * KOREA_DAY_MS)) }}>← 이전 주</button>
+          <div><strong>{koreanWeekLabel(weekStart)}</strong><span>{weekFilePart}</span></div>
+          <button className="subtle-button" type="button" onClick={() => { setError(''); setLoading(true); setWeekStart((current) => new Date(current.getTime() + 7 * KOREA_DAY_MS)) }} disabled={isCurrentWeek}>다음 주 →</button>
+        </div>
+
+        {error ? <div className="table-empty"><strong>{error}</strong><span>DB 테이블과 RLS 정책은 변경하지 않았습니다.</span></div>
+          : loading ? <div className="table-empty"><strong>선택한 주의 병원별 예약을 불러오고 있습니다…</strong></div>
+            : hospitals.length === 0 ? <div className="table-empty"><strong>등록된 병원이 없습니다</strong></div>
+              : <div className="hospital-history-board">
+                {hospitals.map((hospital) => {
+                  const hospitalRows = reservations.filter((reservation) => reservation.hospital_id === hospital.id)
+                  return (
+                    <section className="hospital-history-lane" key={hospital.id}>
+                      <header className="hospital-history-lane-header">
+                        <div><h2>{hospital.name}</h2><span>{hospitalRows.length}건</span></div>
+                        <button className="subtle-button" type="button" onClick={() => downloadHospitalWeek(hospital)}>엑셀 저장</button>
+                      </header>
+                      <div className="hospital-history-lane-body">
+                        {hospitalRows.length === 0 ? <div className="history-lane-empty">이 주의 내역이 없습니다.</div>
+                          : hospitalRows.map((reservation) => {
+                            const patientName = patientNameFromNote(reservation.requested_note)
+                            return <article className="hospital-history-card" key={reservation.id}>
+                              <div className="history-card-top"><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></div>
+                              <h3>{patientName || '환자명 미등록'}</h3>
+                              <p className="history-card-time">{formatScheduledAt(reservation.scheduled_at)}</p>
+                              <div className="history-card-route"><span>{reservation.departure_address}</span><b>↓</b><span>{reservation.destination_address}</span></div>
+                              <div className="history-card-details">
+                                <span>보호자 {noteValue(reservation.requested_note, '보호자 연락처') || '미입력'}</span>
+                                <span>감염 {noteValue(reservation.requested_note, '감염 여부') || '미확인'}</span>
+                                <span>산소 {noteValue(reservation.requested_note, '산소 사용 여부') || '미입력'}</span>
+                                <span>동승 {noteValue(reservation.requested_note, '동승 여부') || '미입력'}</span>
+                              </div>
+                            </article>
+                          })}
+                      </div>
+                    </section>
+                  )
+                })}
+              </div>}
+      </section>
+      <p className="role-note">파일 이름은 병원명과 선택 주차를 사용합니다. 예: 더조은요양병원_202611-1주차.xlsx. PC에 저장하려면 병원별 엑셀 저장 버튼을 눌러야 합니다.</p>
     </>
   )
 }
@@ -932,7 +1105,7 @@ function App() {
         <nav className="sidebar-nav" aria-label="주 메뉴">
           <p className="nav-label">{dashboardIsAdmin ? '업무' : '병원 업무'}</p>
           {sidebarNav.map((item) => <NavButton key={item.label} item={item} active={activePage === item.label} onClick={() => setActivePage(item.label)} />)}
-          {profileRole === 'admin' && <><p className="nav-label">관리</p><NavButton item={{ label: '가입 승인', icon: 'history' }} active={activePage === '가입 승인'} onClick={() => setActivePage('가입 승인')} /></>}
+          {profileRole === 'admin' && <><p className="nav-label">관리</p><NavButton item={{ label: '가입 승인', icon: 'history' }} active={activePage === '가입 승인'} onClick={() => setActivePage('가입 승인')} /><NavButton item={{ label: '업체별 이송내역', icon: 'calendar' }} active={activePage === '업체별 이송내역'} onClick={() => setActivePage('업체별 이송내역')} /></>}
         </nav>
 
         <div className="sidebar-bottom">
@@ -950,14 +1123,16 @@ function App() {
           <div className="topbar-actions">
             <span className="today-label">{today}</span>
             <button className="icon-button" type="button" aria-label="예약 목록 열기" title="예약 목록" onClick={() => setActivePage('예약 관리')}><Icon name="search" /></button>
-            <button className="icon-button" type="button" aria-label="예약 정보 새로고침" title="예약 정보 새로고침" onClick={() => setRefreshKey((value) => value + 1)} disabled={!session || activePage === '가입 승인'}><Icon name="refresh" /></button>
+            <button className="icon-button" type="button" aria-label="예약 정보 새로고침" title="예약 정보 새로고침" onClick={() => setRefreshKey((value) => value + 1)} disabled={!session || activePage === '가입 승인' || activePage === '업체별 이송내역'}><Icon name="refresh" /></button>
             <div className="topbar-divider" />
             <div className="top-avatar" aria-label={session ? profileName : '미로그인'}>{profileName.slice(0, 1) || '관'}</div>
           </div>
         </header>
 
         <div className="page-wrap">
-          {activePage === '가입 승인' && profileRole === 'admin' ? (
+          {activePage === '업체별 이송내역' && profileRole === 'admin' ? (
+            <HospitalTransferHistory />
+          ) : activePage === '가입 승인' && profileRole === 'admin' ? (
             <ApprovalManagement />
           ) : activePage === '대시보드' && dashboardIsAdmin ? (
             <>
