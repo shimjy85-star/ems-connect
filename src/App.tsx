@@ -396,10 +396,12 @@ function ApprovalManagement() {
 function ReservationForm({
   session,
   hospitalId,
+  canSubmitRequest,
   onCreated,
 }: {
   session: Session | null
   hospitalId: string | null
+  canSubmitRequest: boolean
   onCreated: () => void
 }) {
   const [patientName, setPatientName] = useState('')
@@ -474,14 +476,14 @@ function ReservationForm({
     }
   }
 
-  const canSubmit = Boolean(supabase && session && hospitalId)
+  const canSubmit = Boolean(supabase && session && hospitalId && canSubmitRequest)
 
   return (
     <section className="panel reservation-form-panel">
       <div className="panel-heading form-panel-heading">
         <div><p className="eyebrow">NEW TRANSPORT REQUEST</p><h2>신규 이송 예약</h2><p>환자 및 이송 정보를 입력해 예약 요청을 접수합니다.</p></div>
       </div>
-      {!canSubmit && <div className="form-info-banner"><span className="connection-indicator" /><span>{!supabase ? '미리보기 화면입니다. Supabase 설정과 로그인을 완료한 뒤 접수할 수 있습니다.' : !session ? '병원 직원 계정으로 로그인해야 접수할 수 있습니다.' : '로그인 계정에 연결된 병원 프로필이 필요합니다.'}</span></div>}
+      {!canSubmit && <div className="form-info-banner"><span className="connection-indicator" /><span>{!supabase ? '미리보기 화면입니다. Supabase 설정과 병원 담당자 로그인을 완료한 뒤 접수할 수 있습니다.' : !session ? '병원 직원 계정으로 로그인해야 접수할 수 있습니다.' : !canSubmitRequest ? '관리자 미리보기입니다. 실제 예약 접수는 병원 담당자 계정에서 할 수 있습니다.' : '로그인 계정에 연결된 병원 프로필이 필요합니다.'}</span></div>}
       <form className="reservation-form" onSubmit={handleSubmit}>
         <div className="form-grid">
           <label className="form-field"><span>환자명 <b>필수</b></span><input value={patientName} onChange={(event) => setPatientName(event.target.value)} autoComplete="off" maxLength={100} placeholder="환자 이름" required /></label>
@@ -535,7 +537,8 @@ function ReservationManagement({
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [notice, setNotice] = useState('')
-  const canRequest = !supabaseConfigured || profileRole === 'hospital_staff' || profileRole === 'hospital_admin'
+  const canRequest = profileRole === 'hospital_staff' || profileRole === 'hospital_admin'
+  const canViewForm = !supabaseConfigured || canRequest || profileRole === 'admin'
   const filteredReservations = reservations.filter((reservation) => {
     const matchesSearch = `${reservation.id} ${patientNameFromNote(reservation.requested_note)} ${reservation.departure_address} ${reservation.destination_address}`.toLowerCase().includes(searchText.toLowerCase())
     return matchesSearch && (statusFilter === 'all' || reservation.status === statusFilter)
@@ -550,8 +553,8 @@ function ReservationManagement({
       {!supabaseConfigured && <div className="connection-banner" role="status"><span className="connection-indicator" /><div className="connection-copy"><strong>화면 미리보기</strong><span>실제 예약 정보 없이 병원 직원 화면을 미리 볼 수 있습니다. DB 연결 후 권한에 맞는 예약만 표시됩니다.</span></div></div>}
       {notice && <div className="success-banner" role="status"><span>✓</span>{notice}</div>}
 
-      <div className={`reservation-workspace-grid${canRequest ? '' : ' list-only'}`}>
-        {canRequest && <ReservationForm session={session} hospitalId={hospitalId} onCreated={() => { setNotice('예약 요청이 접수되었습니다.'); onRefresh() }} />}
+      <div className={`reservation-workspace-grid${canViewForm ? '' : ' list-only'}`}>
+        {canViewForm && <ReservationForm session={session} hospitalId={hospitalId} canSubmitRequest={canRequest} onCreated={() => { setNotice('예약 요청이 접수되었습니다.'); onRefresh() }} />}
         <section className="panel reservation-management-panel">
         <div className="management-toolbar">
           <div><h2>예약 목록</h2><p>{loading ? '불러오는 중…' : `${reservations.length}건 표시 · 현재 계정에 허용된 예약`}</p></div>
