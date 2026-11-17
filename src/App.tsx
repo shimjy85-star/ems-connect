@@ -11,21 +11,30 @@ type NavItem = {
 const mainNav: NavItem[] = [
   { label: '대시보드', icon: 'grid' },
   { label: '예약 관리', icon: 'calendar' },
-  { label: '배차 관리', icon: 'dispatch' },
 ]
 
-const resourceNav: NavItem[] = [
-  { label: '차량 관리', icon: 'vehicle' },
-  { label: '운전자 관리', icon: 'driver' },
-  { label: '병원 관리', icon: 'hospital' },
-  { label: '활동 기록', icon: 'history' },
+type StatKey = 'today' | 'pending' | 'confirmed' | 'inProgress' | 'availableVehicles'
+
+type DashboardStat = {
+  key: StatKey
+  label: string
+  icon: string
+  tone: string
+  unit: string
+}
+
+const hospitalStats: DashboardStat[] = [
+  { key: 'today', label: '오늘 이송', icon: 'calendar', tone: 'blue', unit: '건' },
+  { key: 'pending', label: '배차 검토 중', icon: 'dispatch', tone: 'orange', unit: '건' },
+  { key: 'confirmed', label: '배차 확정', icon: 'ambulance', tone: 'teal', unit: '건' },
+  { key: 'inProgress', label: '운행 중', icon: 'route', tone: 'purple', unit: '건' },
 ]
 
-const stats = [
-  { label: '오늘 예약', icon: 'calendar', tone: 'blue', unit: '건' },
-  { label: '배차 대기', icon: 'dispatch', tone: 'orange', unit: '건' },
-  { label: '운행 중', icon: 'route', tone: 'teal', unit: '대' },
-  { label: '운용 가능 차량', icon: 'vehicle', tone: 'purple', unit: '대' },
+const adminStats: DashboardStat[] = [
+  { key: 'today', label: '오늘 예약', icon: 'calendar', tone: 'blue', unit: '건' },
+  { key: 'pending', label: '배차 대기', icon: 'dispatch', tone: 'orange', unit: '건' },
+  { key: 'inProgress', label: '운행 중', icon: 'route', tone: 'teal', unit: '건' },
+  { key: 'availableVehicles', label: '운용 가능 차량', icon: 'vehicle', tone: 'purple', unit: '대' },
 ]
 
 type ReservationStatus = 'requested' | 'approval_pending' | 'confirmed' | 'in_progress' | 'completed' | 'rejected' | 'cancelled'
@@ -88,6 +97,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     route: <><circle cx="6" cy="18" r="2" /><circle cx="18" cy="6" r="2" /><path d="M8 18h4a4 4 0 0 0 4-4V10a4 4 0 0 1 4-4" /></>,
     bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></>,
     search: <><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 5 5" /></>,
+    refresh: <><path d="M20 7v5h-5" /><path d="M4.9 9a7.5 7.5 0 0 1 12.6-2L20 12M4 17v-5h5" /><path d="M19.1 15a7.5 7.5 0 0 1-12.6 2L4 12" /></>,
     arrow: <><path d="M7 17 17 7M8 7h9v9" /></>,
     ambulance: <><path d="M3 7h11v11H3zM14 11h4l3 3v4h-7z" /><path d="M8.5 10v5m-2.5-2.5h5M6 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm12 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" /></>,
   }
@@ -230,10 +240,11 @@ function ApprovalManagement() {
   const [selectedRoles, setSelectedRoles] = useState<Record<string, 'hospital_admin' | 'hospital_staff'>>({})
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState('')
+  const [copiedProfileId, setCopiedProfileId] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
-  const loadApprovals = async (showLoading = true) => {
+  const loadApprovals = useCallback(async (showLoading = true) => {
     if (!supabase) return
     if (showLoading) setLoading(true)
     const [profileResult, hospitalResult] = await Promise.all([
@@ -254,9 +265,19 @@ function ApprovalManagement() {
     setSelectedHospitals((current) => Object.fromEntries(nextProfiles.map((profile) => [profile.id, current[profile.id] ?? nextHospitals[0]?.id ?? ''])))
     setSelectedRoles((current) => Object.fromEntries(nextProfiles.map((profile) => [profile.id, current[profile.id] ?? 'hospital_staff'])))
     setLoading(false)
-  }
+  }, [])
 
-  useEffect(() => { void loadApprovals(false) }, [])
+  useEffect(() => { void loadApprovals(false) }, [loadApprovals])
+
+  const handleCopyProfileId = async (profileId: string) => {
+    try {
+      await navigator.clipboard.writeText(profileId)
+      setCopiedProfileId(profileId)
+      window.setTimeout(() => setCopiedProfileId(''), 1800)
+    } catch {
+      setError('UID를 복사하지 못했습니다. 브라우저에서 클립보드 권한을 확인해 주세요.')
+    }
+  }
 
   const handleApprove = async (profile: ApprovalProfile) => {
     const hospitalId = selectedHospitals[profile.id]
@@ -296,7 +317,7 @@ function ApprovalManagement() {
               <div className="approval-list">
                 {profiles.map((profile) => (
                   <article className="approval-card" key={profile.id}>
-                    <div className="approval-person"><strong>{profile.full_name || '이름 미등록'}</strong><span>{profile.is_active ? '승인 대기' : '비활성 계정'} · {new Date(profile.created_at).toLocaleDateString('ko-KR')}</span><code>{profile.id}</code></div>
+                    <div className="approval-person"><strong>{profile.full_name || '이름 미등록'}</strong><span>{profile.is_active ? '승인 대기' : '비활성 계정'} · {new Date(profile.created_at).toLocaleDateString('ko-KR')}</span><div className="approval-id-row"><code>{profile.id}</code><button className="copy-id-button" type="button" onClick={() => void handleCopyProfileId(profile.id)}>{copiedProfileId === profile.id ? '복사됨' : 'UID 복사'}</button></div></div>
                     <div className="approval-controls">
                       <label><span>병원</span><select value={selectedHospitals[profile.id] ?? ''} onChange={(event) => setSelectedHospitals((current) => ({ ...current, [profile.id]: event.target.value }))} disabled={!hospitals.length}><option value="">병원 선택</option>{hospitals.map((hospital) => <option key={hospital.id} value={hospital.id}>{hospital.name}</option>)}</select></label>
                       <label><span>권한</span><select value={selectedRoles[profile.id] ?? 'hospital_staff'} onChange={(event) => setSelectedRoles((current) => ({ ...current, [profile.id]: event.target.value as 'hospital_admin' | 'hospital_staff' }))}><option value="hospital_staff">병원 담당자</option><option value="hospital_admin">병원 관리자</option></select></label>
@@ -476,7 +497,7 @@ function App() {
   const [profileHospitalId, setProfileHospitalId] = useState<string | null>(null)
   const [profileState, setProfileState] = useState<'loading' | 'ready' | 'pending' | 'inactive' | 'missing'>('loading')
   const [reservations, setReservations] = useState<ReservationRow[]>([])
-  const [reservationCounts, setReservationCounts] = useState({ today: null as number | null, pending: null as number | null, inProgress: null as number | null, availableVehicles: null as number | null })
+  const [reservationCounts, setReservationCounts] = useState({ today: null as number | null, pending: null as number | null, confirmed: null as number | null, inProgress: null as number | null, availableVehicles: null as number | null })
   const [reservationLoading, setReservationLoading] = useState(false)
   const [reservationError, setReservationError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
@@ -487,6 +508,12 @@ function App() {
     day: 'numeric',
     weekday: 'long',
   }).format(new Date()))
+  const [currentTime, setCurrentTime] = useState(() => Date.now())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     const client = supabase
@@ -528,7 +555,7 @@ function App() {
       if (profileError || !profile) {
         setProfileState('missing')
         setReservations([])
-        setReservationCounts({ today: null, pending: null, inProgress: null, availableVehicles: null })
+        setReservationCounts({ today: null, pending: null, confirmed: null, inProgress: null, availableVehicles: null })
         setReservationLoading(false)
         return
       }
@@ -539,14 +566,14 @@ function App() {
       if (!profile.is_active) {
         setProfileState('inactive')
         setReservations([])
-        setReservationCounts({ today: null, pending: null, inProgress: null, availableVehicles: null })
+        setReservationCounts({ today: null, pending: null, confirmed: null, inProgress: null, availableVehicles: null })
         setReservationLoading(false)
         return
       }
       if (profile.role !== 'admin' && !profile.hospital_id) {
         setProfileState('pending')
         setReservations([])
-        setReservationCounts({ today: null, pending: null, inProgress: null, availableVehicles: null })
+        setReservationCounts({ today: null, pending: null, confirmed: null, inProgress: null, availableVehicles: null })
         setReservationLoading(false)
         return
       }
@@ -560,6 +587,8 @@ function App() {
       if (!active) return
       if (reservationResult.error) {
         setReservationError('예약 정보를 불러오지 못했습니다. 이 계정의 예약 조회 권한을 확인해 주세요.')
+        setReservations([])
+        setReservationCounts({ today: null, pending: null, confirmed: null, inProgress: null, availableVehicles: null })
         setReservationLoading(false)
         return
       }
@@ -571,10 +600,12 @@ function App() {
       startOfToday.setHours(0, 0, 0, 0)
       const startOfTomorrow = new Date(startOfToday)
       startOfTomorrow.setDate(startOfTomorrow.getDate() + 1)
-      const [todayResult, pendingResult, inProgressResult] = await Promise.all([
+      const [todayResult, pendingResult, confirmedResult, inProgressResult] = await Promise.all([
         client.from('reservations').select('id', { count: 'exact', head: true })
-          .gte('scheduled_at', startOfToday.toISOString()).lt('scheduled_at', startOfTomorrow.toISOString()),
+          .gte('scheduled_at', startOfToday.toISOString()).lt('scheduled_at', startOfTomorrow.toISOString())
+          .neq('status', 'cancelled').neq('status', 'rejected'),
         client.from('reservations').select('id', { count: 'exact', head: true }).eq('status', 'requested'),
+        client.from('reservations').select('id', { count: 'exact', head: true }).eq('status', 'confirmed'),
         client.from('reservations').select('id', { count: 'exact', head: true }).eq('status', 'in_progress'),
       ])
 
@@ -587,6 +618,7 @@ function App() {
       setReservationCounts({
         today: todayResult.error ? null : todayResult.count ?? 0,
         pending: pendingResult.error ? null : pendingResult.count ?? 0,
+        confirmed: confirmedResult.error ? null : confirmedResult.count ?? 0,
         inProgress: inProgressResult.error ? null : inProgressResult.count ?? 0,
         availableVehicles,
       })
@@ -657,8 +689,14 @@ function App() {
     setReservations([])
     setReservationError('')
     setReservationLoading(false)
-    setReservationCounts({ today: null, pending: null, inProgress: null, availableVehicles: null })
+    setReservationCounts({ today: null, pending: null, confirmed: null, inProgress: null, availableVehicles: null })
   }
+
+  const dashboardIsAdmin = profileRole === 'admin'
+  const dashboardStats = dashboardIsAdmin ? adminStats : hospitalStats
+  const upcomingReservation = reservations
+    .filter((reservation) => !['completed', 'rejected', 'cancelled'].includes(reservation.status) && new Date(reservation.scheduled_at).getTime() >= currentTime)
+    .sort((first, second) => new Date(first.scheduled_at).getTime() - new Date(second.scheduled_at).getTime())[0]
 
   if (authLoading) {
     return <main className="auth-loading"><span className="loading-spinner" /><p>로그인 상태를 확인하고 있습니다.</p></main>
@@ -691,14 +729,11 @@ function App() {
           <p className="nav-label">업무</p>
           {mainNav.map((item) => <NavButton key={item.label} item={item} active={activePage === item.label} onClick={() => setActivePage(item.label)} />)}
           {profileRole === 'admin' && <><p className="nav-label">관리</p><NavButton item={{ label: '가입 승인', icon: 'history' }} active={activePage === '가입 승인'} onClick={() => setActivePage('가입 승인')} /></>}
-          <p className="nav-label resource-label">운영 자원</p>
-          {resourceNav.map((item) => <NavButton key={item.label} item={item} active={activePage === item.label} onClick={() => setActivePage(item.label)} />)}
         </nav>
 
         <div className="sidebar-bottom">
-          <NavButton item={{ label: '설정', icon: 'settings' }} active={activePage === '설정'} onClick={() => setActivePage('설정')} />
           <div className="user-card">
-            <div className="user-avatar">관</div>
+            <div className="user-avatar">{profileName.slice(0, 1) || '관'}</div>
             <div className="user-copy"><strong>{session ? profileName : '미로그인'}</strong><small>{session ? roleLabel(profileRole) : '로그인 정보 필요'}</small></div>
             {session && <button className="signout-button" type="button" onClick={() => void handleSignOut()}>로그아웃</button>}
           </div>
@@ -710,10 +745,10 @@ function App() {
           <div className="breadcrumb"><span>EMS 운영</span><span className="breadcrumb-divider">/</span><strong>{activePage}</strong></div>
           <div className="topbar-actions">
             <span className="today-label">{today}</span>
-            <button className="icon-button" type="button" aria-label="검색"><Icon name="search" /></button>
-            <button className="icon-button notification-button" type="button" aria-label="알림"><Icon name="bell" /></button>
+            <button className="icon-button" type="button" aria-label="예약 목록 열기" title="예약 목록" onClick={() => setActivePage('예약 관리')}><Icon name="search" /></button>
+            <button className="icon-button" type="button" aria-label="예약 정보 새로고침" title="새로고침" onClick={() => setRefreshKey((value) => value + 1)} disabled={!session}><Icon name="refresh" /></button>
             <div className="topbar-divider" />
-            <div className="top-avatar">관</div>
+            <div className="top-avatar" aria-label={session ? profileName : '미로그인'}>{profileName.slice(0, 1) || '관'}</div>
           </div>
         </header>
 
@@ -726,10 +761,10 @@ function App() {
                 <div>
                   <p className="eyebrow">EMS CONNECT · OPERATIONS OVERVIEW</p>
                   <h1>안녕하세요, {session ? profileName : '병원 담당자'}님 <span className="wave">✦</span></h1>
-                  <p className="heading-subtitle">오늘의 이송 예약과 진행 상태를 확인하세요.</p>
+                  <p className="heading-subtitle">{dashboardIsAdmin ? '가입 신청과 이송 운영 현황을 확인하세요.' : '새 이송을 신청하고 예약 진행 상태를 확인하세요.'}</p>
                 </div>
-                <button className="primary-button" type="button" onClick={() => setActivePage('예약 관리')}>
-                  <span className="button-plus">＋</span> 예약 확인하기
+                <button className="primary-button" type="button" onClick={() => setActivePage(dashboardIsAdmin ? '가입 승인' : '예약 관리')}>
+                  <span className="button-plus">＋</span> {dashboardIsAdmin ? '가입 신청 검토' : '새 예약 신청'}
                 </button>
               </section>
 
@@ -742,15 +777,12 @@ function App() {
             <span className="connection-step">{session ? (profileRole ? roleLabel(profileRole) : '계정 권한 확인 중') : '로그인 정보가 아직 설정되지 않음'}</span>
               </div>
 
-              <section className="stats-grid" aria-label="운영 현황 요약">
-                {stats.map((stat) => {
-                  const value = stat.label === '오늘 예약' ? reservationCounts.today
-                    : stat.label === '배차 대기' ? reservationCounts.pending
-                      : stat.label === '운행 중' ? reservationCounts.inProgress
-                        : reservationCounts.availableVehicles
+              <section className="stats-grid" aria-label={dashboardIsAdmin ? '운영 현황 요약' : '병원 이송 현황 요약'}>
+                {dashboardStats.map((stat) => {
+                  const value = reservationCounts[stat.key]
                   const displayValue = !session ? '—' : reservationLoading ? '…' : value === null ? '—' : value
                   const footnote = !session ? 'DB 연결 후 표시됩니다'
-                    : stat.label === '운용 가능 차량' && profileRole !== 'admin' ? '관리자 계정에서만 조회 가능'
+                    : stat.key === 'availableVehicles' && profileRole !== 'admin' ? '관리자 계정에서만 조회 가능'
                       : reservationLoading ? '불러오는 중'
                         : value === null ? '조회 권한 또는 연결 확인 필요' : '허용된 예약 기준'
                   return <article className="stat-card" key={stat.label}>
@@ -763,30 +795,41 @@ function App() {
               </section>
 
               <div className="content-grid">
-                <section className="panel dispatch-panel">
+                <section className="panel dashboard-workflow-panel">
                   <div className="panel-heading">
-                    <div><h2>실시간 배차 현황</h2><p>차량 위치와 현재 운행 상태</p></div>
-                    <button className="subtle-button" type="button" onClick={() => setActivePage('배차 관리')}>전체 보기 <Icon name="arrow" size={15} /></button>
+                    <div><h2>{dashboardIsAdmin ? '가입 신청 승인' : '이송 예약 진행 순서'}</h2><p>{dashboardIsAdmin ? '병원 직원의 가입 신청을 검토합니다.' : '신청한 이송 요청의 진행 상태를 확인하세요.'}</p></div>
                   </div>
-                  <div className="map-placeholder">
-                    <div className="map-grid-lines" />
-                    <div className="map-center-card"><span className="map-center-icon"><Icon name="vehicle" size={18} /></span><strong>차량 위치 정보</strong><small>연결 설정 후 표시됩니다</small></div>
-                    <span className="map-caption">실시간 지도</span>
-                  </div>
-                  <div className="map-legend"><span><i className="legend-dot green" /> 운행 가능 <b>—</b></span><span><i className="legend-dot orange" /> 운행 중 <b>—</b></span><span><i className="legend-dot gray" /> 정비 중 <b>—</b></span></div>
+                  <ol className="workflow-steps">
+                    {dashboardIsAdmin ? <>
+                      <li><span>1</span><div><strong>가입자 확인</strong><small>신청자 UID로 등록 정보를 확인합니다.</small></div></li>
+                      <li><span>2</span><div><strong>병원과 권한 선택</strong><small>소속 병원과 병원 담당자 권한을 지정합니다.</small></div></li>
+                      <li><span>3</span><div><strong>승인</strong><small>승인 후 병원 직원이 예약을 신청할 수 있습니다.</small></div></li>
+                    </> : <>
+                      <li><span>1</span><div><strong>이송 예약 신청</strong><small>출발지, 목적지, 희망 일시를 입력합니다.</small></div></li>
+                      <li><span>2</span><div><strong>배차 확인</strong><small>배차 담당자가 요청을 검토하고 결과를 반영합니다.</small></div></li>
+                      <li><span>3</span><div><strong>운행 상태 확인</strong><small>예약 목록에서 접수부터 완료까지 상태를 확인합니다.</small></div></li>
+                    </>}
+                  </ol>
+                  <button className="wide-secondary-button" type="button" onClick={() => setActivePage(dashboardIsAdmin ? '가입 승인' : '예약 관리')}>
+                    {dashboardIsAdmin ? '가입 신청 확인하기' : '예약 목록 보기'} <Icon name="arrow" size={15} />
+                  </button>
                 </section>
 
-                <section className="panel queue-panel">
+                <section className="panel next-reservation-panel">
                   <div className="panel-heading">
-                    <div><h2>배차 대기</h2><p>확인이 필요한 예약</p></div>
-                    <span className="queue-badge">{session && !reservationLoading && reservationCounts.pending !== null ? `${reservationCounts.pending} 건` : '— 건'}</span>
+                    <div><h2>{dashboardIsAdmin ? '예정된 이송' : '가장 가까운 이송'}</h2><p>예약 일시가 빠른 순서</p></div>
+                    {upcomingReservation && <span className="queue-badge">{statusLabels[upcomingReservation.status]}</span>}
                   </div>
-                  <div className="empty-state compact-empty">
-                    <span className="empty-icon"><Icon name="dispatch" size={22} /></span>
-                    <strong>{session ? '배차 전용 정책을 확인하고 있습니다' : '배차 요청이 표시되지 않습니다'}</strong>
-                    <span>{session ? '현재 RLS 정책에는 일반 사용자의 배차 점검 조회 규칙이 없습니다.' : '로그인과 데이터 연결 후 권한에 따라 표시됩니다.'}</span>
-                  </div>
-                  <button className="wide-secondary-button" type="button" onClick={() => setActivePage('배차 관리')}>배차 관리로 이동 <Icon name="arrow" size={15} /></button>
+                  {upcomingReservation ? <div className="upcoming-reservation">
+                    <p className="upcoming-date"><Icon name="calendar" size={16} />{formatScheduledAt(upcomingReservation.scheduled_at)}</p>
+                    <div className="upcoming-route"><span>{upcomingReservation.departure_address}</span><b>↓</b><span>{upcomingReservation.destination_address}</span></div>
+                    <p className="upcoming-id">예약 번호 #{upcomingReservation.id.slice(0, 8).toUpperCase()}</p>
+                  </div> : <div className="empty-state compact-empty">
+                    <span className="empty-icon"><Icon name="calendar" size={22} /></span>
+                    <strong>{reservationLoading ? '예약 정보를 불러오고 있습니다…' : '예정된 이송이 없습니다'}</strong>
+                    <span>{dashboardIsAdmin ? '예약이 접수되면 이곳에서 가장 가까운 일정을 확인할 수 있습니다.' : '새 이송을 신청하면 배차 진행 상황을 이곳에서 확인할 수 있습니다.'}</span>
+                  </div>}
+                  <button className="wide-secondary-button" type="button" onClick={() => setActivePage('예약 관리')}>예약 관리로 이동 <Icon name="arrow" size={15} /></button>
                 </section>
               </div>
 
@@ -830,7 +873,7 @@ function App() {
             />
           ) : (
             <section className="coming-soon panel">
-              <span className="coming-icon"><Icon name={mainNav.concat(resourceNav).find((item) => item.label === activePage)?.icon ?? 'settings'} size={23} /></span>
+              <span className="coming-icon"><Icon name={mainNav.find((item) => item.label === activePage)?.icon ?? 'settings'} size={23} /></span>
               <p className="eyebrow">EMS CONNECT</p>
               <h1>{activePage}</h1>
               <p>기존 Supabase 권한과 로그인 흐름을 검토한 뒤 이 화면을 연결합니다.</p>

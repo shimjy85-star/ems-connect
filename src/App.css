@@ -233,3 +233,25 @@ td { border-top: 1px solid #edf0f3; }
 @media (max-width: 760px) { .approval-card { align-items: stretch; flex-direction: column; }.approval-controls { align-items: stretch; flex-wrap: wrap; }.approval-controls label { flex: 1; }.approval-controls select { width: 100%; min-width: 0; }.approval-controls .primary-button { align-self: flex-end; } }
 @media (max-width: 720px) { .management-toolbar { align-items: flex-start; flex-direction: column; }.reservation-filters { width: 100%; }.search-field { flex: 1; width: auto; }.form-grid { gap: 13px; } }
 @media (max-width: 560px) { .reservation-form-panel { padding: 15px; }.form-grid { grid-template-columns: 1fr; }.note-field { grid-column: auto; }.form-footer { align-items: flex-start; flex-direction: column; }.form-footer > div { width: 100%; }.form-footer .primary-button { flex: 1; }.reservation-filters { align-items: stretch; flex-direction: column; }.search-field { min-height: 36px; flex: auto; }.reservation-filters select { width: 100%; }.management-table { min-width: 620px; }.reservation-management-panel { overflow-x: auto; } }
+
+.dashboard-workflow-panel, .next-reservation-panel { min-height: 285px; display: flex; flex-direction: column; }
+.workflow-steps { display: flex; flex-direction: column; gap: 15px; margin: 6px 0 18px; padding: 0; list-style: none; }
+.workflow-steps li { display: flex; align-items: flex-start; gap: 10px; }
+.workflow-steps li > span { flex: 0 0 22px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; color: #d8784d; background: #fff0e8; font-size: 9px; font-weight: 700; }
+.workflow-steps li > div { display: flex; flex-direction: column; gap: 3px; padding-top: 1px; }
+.workflow-steps strong { color: #46596c; font-size: 10px; }
+.workflow-steps small { color: #8997a4; font-size: 9px; line-height: 1.5; }
+.dashboard-workflow-panel .wide-secondary-button, .next-reservation-panel .wide-secondary-button { width: 100%; min-height: 36px; margin-top: auto; font-size: 10px; }
+.next-reservation-panel .panel-heading { align-items: flex-start; }
+.upcoming-reservation { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 14px 0 18px; }
+.upcoming-date { display: flex; align-items: center; gap: 7px; margin: 0; color: #d8784d; font-size: 11px; font-weight: 700; }
+.upcoming-route { display: flex; flex-direction: column; gap: 6px; padding: 11px 12px; border: 1px solid #edf0f3; border-radius: 7px; background: #fbfcfd; }
+.upcoming-route span { overflow-wrap: anywhere; color: #4f6274; font-size: 10px; line-height: 1.5; }
+.upcoming-route b { color: #a9b4bd; font-size: 10px; }
+.upcoming-id { margin: auto 0 0; color: #94a0ab; font: 9px 'DM Sans', sans-serif; }
+.approval-id-row { display: flex; align-items: flex-start; gap: 8px; }
+.approval-id-row code { overflow-wrap: anywhere; }
+.copy-id-button { flex: 0 0 auto; padding: 2px 6px; border: 1px solid #e3e9ed; border-radius: 4px; color: #718191; background: #fff; font: 600 8px 'Noto Sans KR', sans-serif; cursor: pointer; }
+.copy-id-button:hover { border-color: #efb08f; color: #d87548; }
+.icon-button:disabled { cursor: default; opacity: .45; }
+@media (max-width: 560px) { .dashboard-workflow-panel, .next-reservation-panel { min-height: 0; }.workflow-steps { gap: 12px; }.upcoming-reservation { padding-top: 10px; } }
