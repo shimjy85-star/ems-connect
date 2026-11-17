@@ -129,6 +129,7 @@ function LoginScreen({
   onFullNameChange,
   onSubmit,
   onSignUp,
+  onRequestPasswordReset,
 }: {
   email: string
   password: string
@@ -141,6 +142,7 @@ function LoginScreen({
   onFullNameChange: (value: string) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onSignUp: (event: FormEvent<HTMLFormElement>) => void
+  onRequestPasswordReset: () => void
 }) {
   const [isSignUp, setIsSignUp] = useState(false)
 
@@ -167,8 +169,62 @@ function LoginScreen({
           {notice && <p className="login-notice" role="status">{notice}</p>}
           <button className="primary-button login-submit" type="submit" disabled={busy}>{busy ? (isSignUp ? '가입 신청 중…' : '로그인 중…') : (isSignUp ? '가입 신청' : '로그인')}</button>
         </form>
+        {!isSignUp && <button className="login-mode-button password-reset-link" type="button" onClick={onRequestPasswordReset}>비밀번호를 잊으셨나요?</button>}
         <button className="login-mode-button" type="button" onClick={() => setIsSignUp((value) => !value)}>{isSignUp ? '이미 계정이 있나요? 로그인' : '처음 이용하시나요? 가입 신청'}</button>
         <p className="login-security"><span className="security-dot" />로그인한 계정에 허용된 데이터만 표시됩니다.</p>
+      </section>
+      <p className="login-footer">EMS CONNECT <span>·</span> 응급 이송 운영 플랫폼</p>
+    </main>
+  )
+}
+
+function PasswordRecoveryScreen({
+  busy,
+  error,
+  notice,
+  onSubmit,
+  onCancel,
+}: {
+  busy: boolean
+  error: string
+  notice: string
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onCancel: () => void
+}) {
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [formError, setFormError] = useState('')
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (newPassword !== confirmPassword) {
+      setFormError('새 비밀번호가 서로 다릅니다.')
+      return
+    }
+    setFormError('')
+    onSubmit(event)
+  }
+
+  return (
+    <main className="login-screen">
+      <section className="login-card">
+        <a className="login-brand" href="#login">
+          <span className="brand-mark"><Icon name="ambulance" size={22} /></span>
+          <span className="brand-copy"><strong>EMS CONNECT</strong><small>응급 이송 통합 관리</small></span>
+        </a>
+        <p className="eyebrow">ACCOUNT SECURITY</p>
+        <h1>새 비밀번호 설정</h1>
+        <p className="login-description">다른 사람이 추측하기 어려운 8자 이상의 비밀번호를 입력하세요.</p>
+        <form className="login-form" onSubmit={handleSubmit}>
+          <label htmlFor="new-password">새 비밀번호</label>
+          <input id="new-password" name="new-password" type="password" autoComplete="new-password" minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
+          <label htmlFor="confirm-new-password">새 비밀번호 확인</label>
+          <input id="confirm-new-password" type="password" autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required />
+          {(formError || error) && <p className="login-error" role="alert">{formError || error}</p>}
+          {notice && <p className="login-notice" role="status">{notice}</p>}
+          <button className="primary-button login-submit" type="submit" disabled={busy}>{busy ? '변경 중…' : '비밀번호 변경'}</button>
+        </form>
+        <button className="login-mode-button" type="button" onClick={onCancel}>로그인 화면으로 돌아가기</button>
       </section>
       <p className="login-footer">EMS CONNECT <span>·</span> 응급 이송 운영 플랫폼</p>
     </main>
@@ -494,6 +550,10 @@ function App() {
   const [activePage, setActivePage] = useState('대시보드')
   const [session, setSession] = useState<Session | null>(null)
   const [authLoading, setAuthLoading] = useState(supabaseConfigured)
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
+  const [passwordRecoveryBusy, setPasswordRecoveryBusy] = useState(false)
+  const [passwordRecoveryError, setPasswordRecoveryError] = useState('')
+  const [passwordRecoveryNotice, setPasswordRecoveryNotice] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
@@ -534,7 +594,12 @@ function App() {
       setProfileState(data.session ? 'loading' : 'ready')
       setAuthLoading(false)
     })
-    const { data: { subscription } } = client.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: { subscription } } = client.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true)
+        setPasswordRecoveryError('')
+        setPasswordRecoveryNotice('')
+      }
       setSession(nextSession)
       setProfileState(nextSession ? 'loading' : 'ready')
       setLoginError('')
@@ -722,6 +787,56 @@ function App() {
     }
   }
 
+  const handleRequestPasswordReset = async () => {
+    if (!supabase) return
+    const recoveryEmail = email.trim()
+    if (!recoveryEmail || !recoveryEmail.includes('@')) {
+      setLoginError('비밀번호 재설정 이메일을 받을 계정 이메일을 먼저 입력해 주세요.')
+      setSignupNotice('')
+      return
+    }
+    setLoginError('')
+    setSignupNotice('')
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail, {
+        redirectTo: window.location.origin,
+      })
+      if (error) {
+        setLoginError('재설정 이메일을 보내지 못했습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.')
+        return
+      }
+      setSignupNotice('해당 이메일로 계정이 등록되어 있다면 비밀번호 재설정 링크가 전송됩니다. 받은편지함을 확인해 주세요.')
+    } catch {
+      setLoginError('Supabase에 연결하지 못했습니다. 네트워크 상태를 확인해 주세요.')
+    }
+  }
+
+  const handlePasswordRecoverySubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!supabase) return
+    const form = event.currentTarget
+    const passwordInput = form.elements.namedItem('new-password')
+    const newPassword = passwordInput instanceof HTMLInputElement ? passwordInput.value : ''
+    setPasswordRecoveryBusy(true)
+    setPasswordRecoveryError('')
+    setPasswordRecoveryNotice('')
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      if (error) {
+        setPasswordRecoveryError('비밀번호를 변경하지 못했습니다. 재설정 링크가 만료되지 않았는지 확인해 주세요.')
+        return
+      }
+      await supabase.auth.signOut()
+      setPasswordRecovery(false)
+      setPasswordRecoveryNotice('')
+      setSignupNotice('비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.')
+    } catch {
+      setPasswordRecoveryError('비밀번호를 변경하지 못했습니다. 재설정 링크를 다시 요청해 주세요.')
+    } finally {
+      setPasswordRecoveryBusy(false)
+    }
+  }
+
   const handleSignOut = async () => {
     if (!supabase) return
     await supabase.auth.signOut()
@@ -729,6 +844,7 @@ function App() {
     setProfileRole('')
     setProfileHospitalId(null)
     setProfileState('ready')
+    setPasswordRecovery(false)
     setReservations([])
     setHasMoreReservations(false)
     setLoadMoreError('')
@@ -744,8 +860,11 @@ function App() {
   if (authLoading) {
     return <main className="auth-loading"><span className="loading-spinner" /><p>로그인 상태를 확인하고 있습니다.</p></main>
   }
+  if (passwordRecovery) {
+    return <PasswordRecoveryScreen busy={passwordRecoveryBusy} error={passwordRecoveryError} notice={passwordRecoveryNotice} onSubmit={handlePasswordRecoverySubmit} onCancel={() => void handleSignOut()} />
+  }
   if (supabaseConfigured && !session) {
-    return <LoginScreen email={email} password={password} fullName={fullName} error={loginError} notice={signupNotice} busy={loginBusy} onEmailChange={setEmail} onPasswordChange={setPassword} onFullNameChange={setFullName} onSubmit={handleLogin} onSignUp={handleSignUp} />
+    return <LoginScreen email={email} password={password} fullName={fullName} error={loginError} notice={signupNotice} busy={loginBusy} onEmailChange={setEmail} onPasswordChange={setPassword} onFullNameChange={setFullName} onSubmit={handleLogin} onSignUp={handleSignUp} onRequestPasswordReset={() => void handleRequestPasswordReset()} />
   }
   if (supabaseConfigured && session && profileState === 'loading') {
     return <main className="auth-loading"><span className="loading-spinner" /><p>계정 승인 상태를 확인하고 있습니다.</p></main>
