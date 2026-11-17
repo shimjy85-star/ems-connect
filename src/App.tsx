@@ -5,7 +5,7 @@ import { supabase, supabaseConfigured } from './lib/supabase'
 
 type NavItem = {
   label: string
-  icon: 'grid' | 'calendar' | 'dispatch' | 'vehicle' | 'driver' | 'hospital' | 'history' | 'settings'
+  icon: 'grid' | 'calendar' | 'history'
 }
 
 const mainNav: NavItem[] = [
@@ -95,7 +95,6 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     history: <><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8" /><path d="M3 3v5h5m4-1v5l3 2" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.7a8 8 0 0 1-1.5.9l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.5-.9l-1.7.7-1.4-2.4 1.4-1.1a7 7 0 0 1 0-1.8l-1.4-1.1 1.4-2.4 1.7.7a8 8 0 0 1 1.5-.9l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.5.9l1.7-.7 1.4 2.4-1.4 1.1a7 7 0 0 1 0 1.8Z" /></>,
     route: <><circle cx="6" cy="18" r="2" /><circle cx="18" cy="6" r="2" /><path d="M8 18h4a4 4 0 0 0 4-4V10a4 4 0 0 1 4-4" /></>,
-    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></>,
     search: <><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 5 5" /></>,
     refresh: <><path d="M20 7v5h-5" /><path d="M4.9 9a7.5 7.5 0 0 1 12.6-2L20 12M4 17v-5h5" /><path d="M19.1 15a7.5 7.5 0 0 1-12.6 2L4 12" /></>,
     arrow: <><path d="M7 17 17 7M8 7h9v9" /></>,
@@ -497,6 +496,8 @@ function App() {
   const [profileHospitalId, setProfileHospitalId] = useState<string | null>(null)
   const [profileState, setProfileState] = useState<'loading' | 'ready' | 'pending' | 'inactive' | 'missing'>('loading')
   const [reservations, setReservations] = useState<ReservationRow[]>([])
+  const [nextReservation, setNextReservation] = useState<ReservationRow | null>(null)
+  const [upcomingError, setUpcomingError] = useState(false)
   const [reservationCounts, setReservationCounts] = useState({ today: null as number | null, pending: null as number | null, confirmed: null as number | null, inProgress: null as number | null, availableVehicles: null as number | null })
   const [reservationLoading, setReservationLoading] = useState(false)
   const [reservationError, setReservationError] = useState('')
@@ -508,12 +509,6 @@ function App() {
     day: 'numeric',
     weekday: 'long',
   }).format(new Date()))
-  const [currentTime, setCurrentTime] = useState(() => Date.now())
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setCurrentTime(Date.now()), 60_000)
-    return () => window.clearInterval(timer)
-  }, [])
 
   useEffect(() => {
     const client = supabase
@@ -555,6 +550,8 @@ function App() {
       if (profileError || !profile) {
         setProfileState('missing')
         setReservations([])
+        setNextReservation(null)
+        setUpcomingError(false)
         setReservationCounts({ today: null, pending: null, confirmed: null, inProgress: null, availableVehicles: null })
         setReservationLoading(false)
         return
@@ -566,6 +563,8 @@ function App() {
       if (!profile.is_active) {
         setProfileState('inactive')
         setReservations([])
+        setNextReservation(null)
+        setUpcomingError(false)
         setReservationCounts({ today: null, pending: null, confirmed: null, inProgress: null, availableVehicles: null })
         setReservationLoading(false)
         return
@@ -573,21 +572,28 @@ function App() {
       if (profile.role !== 'admin' && !profile.hospital_id) {
         setProfileState('pending')
         setReservations([])
+        setNextReservation(null)
+        setUpcomingError(false)
         setReservationCounts({ today: null, pending: null, confirmed: null, inProgress: null, availableVehicles: null })
         setReservationLoading(false)
         return
       }
       setProfileState('ready')
 
-      const reservationResult = await client.from('reservations')
-        .select('id, departure_address, destination_address, scheduled_at, status, created_at')
-        .order('created_at', { ascending: false })
-        .limit(25)
+      const reservationColumns = 'id, departure_address, destination_address, scheduled_at, status, created_at'
+      const [reservationResult, upcomingResult] = await Promise.all([
+        client.from('reservations').select(reservationColumns)
+          .order('created_at', { ascending: false }).limit(25),
+        client.from('reservations').select(reservationColumns)
+          .gte('scheduled_at', new Date().toISOString()).order('scheduled_at', { ascending: true }).limit(25),
+      ])
 
       if (!active) return
       if (reservationResult.error) {
         setReservationError('예약 정보를 불러오지 못했습니다. 이 계정의 예약 조회 권한을 확인해 주세요.')
         setReservations([])
+        setNextReservation(null)
+        setUpcomingError(false)
         setReservationCounts({ today: null, pending: null, confirmed: null, inProgress: null, availableVehicles: null })
         setReservationLoading(false)
         return
@@ -595,6 +601,9 @@ function App() {
 
       const rows = (reservationResult.data ?? []) as ReservationRow[]
       setReservations(rows)
+      const upcomingRows = (upcomingResult.data ?? []) as ReservationRow[]
+      setUpcomingError(Boolean(upcomingResult.error))
+      setNextReservation(upcomingRows.find((reservation) => !['completed', 'rejected', 'cancelled'].includes(reservation.status)) ?? null)
 
       const startOfToday = new Date()
       startOfToday.setHours(0, 0, 0, 0)
@@ -687,6 +696,8 @@ function App() {
     setProfileHospitalId(null)
     setProfileState('ready')
     setReservations([])
+    setNextReservation(null)
+    setUpcomingError(false)
     setReservationError('')
     setReservationLoading(false)
     setReservationCounts({ today: null, pending: null, confirmed: null, inProgress: null, availableVehicles: null })
@@ -694,10 +705,6 @@ function App() {
 
   const dashboardIsAdmin = profileRole === 'admin'
   const dashboardStats = dashboardIsAdmin ? adminStats : hospitalStats
-  const upcomingReservation = reservations
-    .filter((reservation) => !['completed', 'rejected', 'cancelled'].includes(reservation.status) && new Date(reservation.scheduled_at).getTime() >= currentTime)
-    .sort((first, second) => new Date(first.scheduled_at).getTime() - new Date(second.scheduled_at).getTime())[0]
-
   if (authLoading) {
     return <main className="auth-loading"><span className="loading-spinner" /><p>로그인 상태를 확인하고 있습니다.</p></main>
   }
@@ -746,7 +753,7 @@ function App() {
           <div className="topbar-actions">
             <span className="today-label">{today}</span>
             <button className="icon-button" type="button" aria-label="예약 목록 열기" title="예약 목록" onClick={() => setActivePage('예약 관리')}><Icon name="search" /></button>
-            <button className="icon-button" type="button" aria-label="예약 정보 새로고침" title="새로고침" onClick={() => setRefreshKey((value) => value + 1)} disabled={!session}><Icon name="refresh" /></button>
+            <button className="icon-button" type="button" aria-label="예약 정보 새로고침" title="예약 정보 새로고침" onClick={() => setRefreshKey((value) => value + 1)} disabled={!session || activePage === '가입 승인'}><Icon name="refresh" /></button>
             <div className="topbar-divider" />
             <div className="top-avatar" aria-label={session ? profileName : '미로그인'}>{profileName.slice(0, 1) || '관'}</div>
           </div>
@@ -818,16 +825,16 @@ function App() {
                 <section className="panel next-reservation-panel">
                   <div className="panel-heading">
                     <div><h2>{dashboardIsAdmin ? '예정된 이송' : '가장 가까운 이송'}</h2><p>예약 일시가 빠른 순서</p></div>
-                    {upcomingReservation && <span className="queue-badge">{statusLabels[upcomingReservation.status]}</span>}
+                    {nextReservation && <span className="queue-badge">{statusLabels[nextReservation.status]}</span>}
                   </div>
-                  {upcomingReservation ? <div className="upcoming-reservation">
-                    <p className="upcoming-date"><Icon name="calendar" size={16} />{formatScheduledAt(upcomingReservation.scheduled_at)}</p>
-                    <div className="upcoming-route"><span>{upcomingReservation.departure_address}</span><b>↓</b><span>{upcomingReservation.destination_address}</span></div>
-                    <p className="upcoming-id">예약 번호 #{upcomingReservation.id.slice(0, 8).toUpperCase()}</p>
+                  {nextReservation ? <div className="upcoming-reservation">
+                    <p className="upcoming-date"><Icon name="calendar" size={16} />{formatScheduledAt(nextReservation.scheduled_at)}</p>
+                    <div className="upcoming-route"><span>{nextReservation.departure_address}</span><b>↓</b><span>{nextReservation.destination_address}</span></div>
+                    <p className="upcoming-id">예약 번호 #{nextReservation.id.slice(0, 8).toUpperCase()}</p>
                   </div> : <div className="empty-state compact-empty">
                     <span className="empty-icon"><Icon name="calendar" size={22} /></span>
-                    <strong>{reservationLoading ? '예약 정보를 불러오고 있습니다…' : '예정된 이송이 없습니다'}</strong>
-                    <span>{dashboardIsAdmin ? '예약이 접수되면 이곳에서 가장 가까운 일정을 확인할 수 있습니다.' : '새 이송을 신청하면 배차 진행 상황을 이곳에서 확인할 수 있습니다.'}</span>
+                    <strong>{reservationLoading ? '예약 정보를 불러오고 있습니다…' : upcomingError ? '예정 일정을 불러오지 못했습니다' : '예정된 이송이 없습니다'}</strong>
+                    <span>{upcomingError ? '예약 조회 권한을 확인한 뒤 새로고침해 주세요.' : dashboardIsAdmin ? '예약이 접수되면 이곳에서 가장 가까운 일정을 확인할 수 있습니다.' : '새 이송을 신청하면 배차 진행 상황을 이곳에서 확인할 수 있습니다.'}</span>
                   </div>}
                   <button className="wide-secondary-button" type="button" onClick={() => setActivePage('예약 관리')}>예약 관리로 이동 <Icon name="arrow" size={15} /></button>
                 </section>
