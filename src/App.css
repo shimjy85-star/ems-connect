@@ -300,3 +300,12 @@ td { border-top: 1px solid #edf0f3; }
   .history-week-toolbar .subtle-button { padding: 6px 7px; font-size: 8px; }
   .hospital-history-board { grid-auto-columns: minmax(250px, 84vw); padding: 10px; }
 }
+
+.reservation-details { margin-top: 10px; min-width: 180px; }
+.reservation-details summary { cursor: pointer; color: #1768b2; font-weight: 600; }
+.reservation-details p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; font-size: 13px; }
+
+.dispatch-actions {display:flex;flex-direction:column;gap:8px;margin-top:10px;min-width:160px;white-space:normal;}
+.dispatch-actions select {width:100%;padding:8px;}
+
+.my-trips {padding:24px;} .trip-card {padding:20px 0;border-bottom:1px solid #ddd;} .trip-notes {white-space:pre-wrap;overflow-wrap:anywhere;}

@@ -62,9 +62,9 @@ function localDateTimeValue(date: Date) {
 const statusLabels: Record<ReservationStatus, string> = {
   requested: '접수',
   approval_pending: '승인 대기',
-  confirmed: '배차 확정',
+  confirmed: '배차완료',
   in_progress: '운행 중',
-  completed: '완료',
+  completed: '이송완료',
   rejected: '반려',
   cancelled: '취소',
 }
@@ -387,12 +387,12 @@ function ApprovalManagement() {
     setBusyId(profile.id)
     setError('')
     setNotice('')
-    const { error: updateError } = await supabase.from('profiles').update({
+    const { data: approvedProfile, error: updateError } = await supabase.from('profiles').update({
       hospital_id: hospitalId,
       role: selectedRoles[profile.id] ?? 'hospital_staff',
       is_active: true,
-    }).eq('id', profile.id)
-    if (updateError) {
+    }).eq('id', profile.id).is('hospital_id', null).select('id').maybeSingle()
+    if (updateError || !approvedProfile) {
       setError('승인하지 못했습니다. 기존 profiles 관리자 정책을 확인해 주세요.')
       setBusyId('')
       return
@@ -713,7 +713,7 @@ function ReservationManagement({
   const [statusFilter, setStatusFilter] = useState('all')
   const [notice, setNotice] = useState('')
   const canRequest = profileRole === 'hospital_staff' || profileRole === 'hospital_admin'
-  const canViewForm = !supabaseConfigured || canRequest || profileRole === 'admin'
+  const canViewForm = !supabaseConfigured || canRequest
   const filteredReservations = reservations.filter((reservation) => {
     const matchesSearch = `${reservation.id} ${patientNameFromNote(reservation.requested_note)} ${reservation.departure_address} ${reservation.destination_address}`.toLowerCase().includes(searchText.toLowerCase())
     return matchesSearch && (statusFilter === 'all' || reservation.status === statusFilter)
@@ -744,7 +744,7 @@ function ReservationManagement({
             <tbody>
               {loading ? <tr><td colSpan={5}><div className="table-empty"><strong>예약 목록을 불러오고 있습니다…</strong></div></td></tr>
                 : error ? <tr><td colSpan={5}><div className="table-empty"><strong>{error}</strong><span>테이블과 RLS 정책은 변경하지 않았습니다.</span></div></td></tr>
-                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}</td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td></tr>)
+                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 보기</summary><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p></details></td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span>{profileRole === 'admin' && <DispatchActions reservation={reservation} onChanged={onRefresh} />}</td></tr>)
                     : <tr><td colSpan={5}><div className="table-empty"><span className="table-empty-icon"><Icon name="calendar" size={20} /></span><strong>{searchText || statusFilter !== 'all' ? '검색 조건에 맞는 예약이 없습니다' : '접수된 예약이 없습니다'}</strong><span>예약 요청을 접수하면 이 목록에서 진행 상태를 확인할 수 있습니다.</span></div></td></tr>}
             </tbody>
           </table>
@@ -753,9 +753,91 @@ function ReservationManagement({
         {loadMoreError && <p className="form-error pagination-error" role="alert">{loadMoreError}</p>}
         </section>
       </div>
-      {supabaseConfigured && session && !canRequest && <p className="role-note">예약 접수는 병원 담당자 계정에서 사용할 수 있습니다. 현재 계정은 예약 조회 전용으로 표시됩니다.</p>}
+      {supabaseConfigured && session && !canRequest && <p className="role-note">예약 접수는 병원 담당자 계정에서 사용할 수 있습니다. 관리자는 예약 목록에서 9090 배차와 운행 상태를 처리할 수 있습니다.</p>}
     </>
   )
+}
+
+function DispatchActions({ reservation, onChanged }: { reservation: ReservationRow; onChanged: () => void }) {
+  const [drivers, setDrivers] = useState<{id: string; name: string}[]>([])
+  const [driverId, setDriverId] = useState('')
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const pending = ['requested', 'approval_pending'].includes(reservation.status)
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(timer) }, [])
+  const expired = now >= new Date(reservation.created_at).getTime() + 86400000
+  async function prepare() {
+    if (!supabase || busy) return
+    setBusy(true); setError('')
+    try {
+      const result = await supabase.from('drivers').select('id, name').eq('is_active', true).order('name')
+      if (result.error) throw result.error
+      setDrivers(result.data ?? []); setOpen(true)
+      if (!result.data?.length) setError('등록된 기사가 없습니다. 9090 기사 등록 후 배차할 수 있습니다.')
+    } catch { setError('기사 목록을 불러오지 못했습니다. 다시 시도해 주세요.') }
+    finally { setBusy(false) }
+  }
+  async function save() {
+    if (!supabase || busy) return
+    setBusy(true); setError('')
+    try {
+      const result = pending
+        ? await supabase.rpc('dispatch_9090', {p_reservation_id: reservation.id, p_driver_id: driverId})
+        : await supabase.rpc('advance_9090', {p_reservation_id: reservation.id, p_expected: reservation.status, p_next: reservation.status === 'confirmed' ? 'in_progress' : 'completed'})
+      if (result.error) throw result.error
+      if (!result.data) throw new Error('변경 결과를 확인하지 못했습니다.')
+      setOpen(false); onChanged()
+    } catch (err) { setError(err instanceof Error ? err.message : '처리하지 못했습니다. 상태를 새로고침해 확인해 주세요.') }
+    finally { setBusy(false) }
+  }
+  if (!pending && !['confirmed', 'in_progress'].includes(reservation.status)) return null
+  return <div className="dispatch-actions">
+    {pending && expired ? <small>24시간 경과 · 자동 취소 처리 대기</small> : pending ? <>
+      {!open ? <button type="button" className="subtle-button" disabled={busy} onClick={() => void prepare()}>9090 배차</button> : <>
+        <label>9090 담당 기사<select aria-label="9090 담당 기사" value={driverId} onChange={event => setDriverId(event.target.value)} disabled={busy}><option value="">기사를 선택하세요</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select></label>
+        <button type="button" className="primary-button" disabled={busy || !driverId} onClick={() => void save()}>{busy ? '처리 중…' : '배차완료 확정'}</button>
+        <button type="button" className="subtle-button" disabled={busy} onClick={() => setOpen(false)}>닫기</button>
+      </>}
+    </> : <button type="button" className="subtle-button" disabled={busy} onClick={() => void save()}>{busy ? '처리 중…' : reservation.status === 'confirmed' ? '운행 시작' : '이송완료'}</button>}
+    {error && <p className="form-error" role="alert">{error}</p>}
+  </div>
+}
+
+function MyTrips({ userId }: { userId: string }) {
+  const [rows, setRows] = useState<ReservationRow[]>([])
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [refresh, setRefresh] = useState(0)
+  const [limit, setLimit] = useState(50)
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      if (!supabase) return
+      try {
+        const result = await supabase.from('reservations').select('id, departure_address, destination_address, scheduled_at, status, created_at, requested_note')
+          .eq('driver_id', userId).in('status', ['confirmed', 'in_progress']).order('scheduled_at').order('id').limit(limit)
+        if (!active) return
+        if (result.error) throw result.error
+        setRows(result.data ?? []); setError('')
+      } catch { if (active) setError('운행 목록을 갱신하지 못했습니다. 새로고침해 주세요.') }
+      finally { if (active) setLoading(false) }
+    }
+    void load()
+    const timer = window.setInterval(() => void load(), 30000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [userId, refresh, limit])
+  return <section className="panel my-trips"><h1>내 운행 · 71나9090</h1><p>본인에게 배차완료된 예약과 운행 중인 예약입니다. 30초마다 갱신됩니다.</p>
+    <button type="button" className="subtle-button" onClick={() => setRefresh(v => v + 1)}>새로고침</button>
+    {error && <p className="form-error" role="alert">{error}</p>}
+    {loading ? <p>불러오는 중…</p> : !rows.length && !error ? <p>현재 배정된 운행이 없습니다.</p> : rows.map(r => <article className="trip-card" key={r.id}>
+      <h2>{patientNameFromNote(r.requested_note) || '이송 예약'}</h2><p>{formatScheduledAt(r.scheduled_at)} · {statusLabels[r.status]}</p>
+      <p>{r.departure_address} → {r.destination_address}</p><p className="trip-notes">{r.requested_note}</p>
+      <DispatchActions reservation={r} onChanged={() => setRefresh(v => v + 1)} />
+    </article>)}
+    {rows.length === limit && <button type="button" className="subtle-button" onClick={() => setLimit(v => v + 50)}>다음 운행 더 보기</button>}
+  </section>
 }
 
 function App() {
@@ -1105,7 +1187,7 @@ function App() {
         <nav className="sidebar-nav" aria-label="주 메뉴">
           <p className="nav-label">{dashboardIsAdmin ? '업무' : '병원 업무'}</p>
           {sidebarNav.map((item) => <NavButton key={item.label} item={item} active={activePage === item.label} onClick={() => setActivePage(item.label)} />)}
-          {profileRole === 'admin' && <><p className="nav-label">관리</p><NavButton item={{ label: '가입 승인', icon: 'history' }} active={activePage === '가입 승인'} onClick={() => setActivePage('가입 승인')} /><NavButton item={{ label: '업체별 이송내역', icon: 'calendar' }} active={activePage === '업체별 이송내역'} onClick={() => setActivePage('업체별 이송내역')} /></>}
+          {profileRole === 'admin' && <><NavButton item={{ label: '내 운행', icon: 'calendar' }} active={activePage === '내 운행'} onClick={() => setActivePage('내 운행')} /><p className="nav-label">관리</p><NavButton item={{ label: '가입 승인', icon: 'history' }} active={activePage === '가입 승인'} onClick={() => setActivePage('가입 승인')} /><NavButton item={{ label: '업체별 이송내역', icon: 'calendar' }} active={activePage === '업체별 이송내역'} onClick={() => setActivePage('업체별 이송내역')} /></>}
         </nav>
 
         <div className="sidebar-bottom">
@@ -1130,7 +1212,7 @@ function App() {
         </header>
 
         <div className="page-wrap">
-          {activePage === '업체별 이송내역' && profileRole === 'admin' ? (
+          {activePage === '내 운행' && profileRole === 'admin' && session ? (<MyTrips userId={session.user.id} />) : activePage === '업체별 이송내역' && profileRole === 'admin' ? (
             <HospitalTransferHistory />
           ) : activePage === '가입 승인' && profileRole === 'admin' ? (
             <ApprovalManagement />
@@ -1226,7 +1308,7 @@ function App() {
                           : reservations.length > 0 ? reservations.slice(0, 5).map((reservation) => (
                             <tr className="reservation-row" key={reservation.id}>
                               <td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span></td>
-                              <td className="address-cell">{reservation.departure_address}</td>
+                              <td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 보기</summary><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p></details></td>
                               <td className="address-cell">{reservation.destination_address}</td>
                               <td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td>
                               <td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td>
