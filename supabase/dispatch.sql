@@ -1,4 +1,7 @@
 -- Existing tables and RLS policies are preserved. Apply as project owner.
+-- PostgreSQL requires a newly added enum value to be committed before functions use it.
+alter type public.reservation_status add value if not exists 'external_dispatch';
+commit;
 begin;
 insert into public.vehicles(vehicle_number)
 select '71나9090' where not exists (select 1 from public.vehicles where vehicle_number='71나9090');
@@ -42,6 +45,21 @@ begin
 end $$;
 revoke all on function public.advance_9090(uuid,public.reservation_status,public.reservation_status) from public, anon;
 grant execute on function public.advance_9090(uuid,public.reservation_status,public.reservation_status) to authenticated;
+
+create or replace function public.resolve_pending_reservation(p_reservation_id uuid, p_next public.reservation_status)
+returns uuid language plpgsql security invoker set search_path = '' as $$
+declare changed uuid;
+begin
+  if not public.is_platform_admin() then raise exception '관리자만 처리할 수 있습니다.'; end if;
+  if p_next not in ('external_dispatch','cancelled') then raise exception '허용되지 않은 상태입니다.'; end if;
+  update public.reservations set status=p_next, approved_by=auth.uid(), approved_at=clock_timestamp(), vehicle_id=null, driver_id=null
+  where id=p_reservation_id and status in ('requested','approval_pending')
+    and created_at > clock_timestamp()-interval '24 hours' returning id into changed;
+  if changed is null then raise exception '이미 처리됐거나 24시간이 지난 예약입니다. 새로고침해 주세요.'; end if;
+  return changed;
+end $$;
+revoke all on function public.resolve_pending_reservation(uuid,public.reservation_status) from public, anon;
+grant execute on function public.resolve_pending_reservation(uuid,public.reservation_status) to authenticated;
 
 create extension if not exists pg_cron;
 -- Atomic conditional UPDATE serializes with dispatch_9090's row lock.

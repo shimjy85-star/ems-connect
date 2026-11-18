@@ -1,0 +1,13 @@
+{
+  "name": "EMS CONNECT 9090",
+  "short_name": "EMS 9090",
+  "description": "71나9090 배차 및 운행 정보 확인",
+  "start_url": "/#my-trips",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#101d2b",
+  "lang": "ko",
+  "icons": [
+    { "src": "/ems-connect.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

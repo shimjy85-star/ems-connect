@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import './App.css'
+import { connectPush } from './lib/push'
 import { supabase, supabaseConfigured } from './lib/supabase'
 import { createXlsxBlob } from './lib/xlsx'
 
@@ -40,7 +41,7 @@ const adminStats: DashboardStat[] = [
   { key: 'availableVehicles', label: '운용 가능 차량', icon: 'vehicle', tone: 'purple', unit: '대' },
 ]
 
-type ReservationStatus = 'requested' | 'approval_pending' | 'confirmed' | 'in_progress' | 'completed' | 'rejected' | 'cancelled'
+type ReservationStatus = 'requested' | 'approval_pending' | 'confirmed' | 'external_dispatch' | 'in_progress' | 'completed' | 'rejected' | 'cancelled'
 
 type ReservationRow = {
   id: string
@@ -63,6 +64,7 @@ const statusLabels: Record<ReservationStatus, string> = {
   requested: '접수',
   approval_pending: '승인 대기',
   confirmed: '배차완료',
+  external_dispatch: '타차량 배차',
   in_progress: '운행 중',
   completed: '이송완료',
   rejected: '반려',
@@ -740,12 +742,12 @@ function ReservationManagement({
         </div>
         <div className="table-wrap">
           <table className="management-table">
-            <thead><tr><th>예약 번호</th><th>출발지</th><th>목적지</th><th>희망 일시</th><th>상태</th></tr></thead>
+            <thead><tr><th>예약 번호</th><th>출발지</th><th>목적지</th><th>희망 일시</th><th>상태</th>{profileRole === 'admin' && <th className="admin-action-heading">관리자 처리</th>}</tr></thead>
             <tbody>
-              {loading ? <tr><td colSpan={5}><div className="table-empty"><strong>예약 목록을 불러오고 있습니다…</strong></div></td></tr>
-                : error ? <tr><td colSpan={5}><div className="table-empty"><strong>{error}</strong><span>테이블과 RLS 정책은 변경하지 않았습니다.</span></div></td></tr>
-                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 보기</summary><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p></details></td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span>{profileRole === 'admin' && <DispatchActions reservation={reservation} onChanged={onRefresh} />}</td></tr>)
-                    : <tr><td colSpan={5}><div className="table-empty"><span className="table-empty-icon"><Icon name="calendar" size={20} /></span><strong>{searchText || statusFilter !== 'all' ? '검색 조건에 맞는 예약이 없습니다' : '접수된 예약이 없습니다'}</strong><span>예약 요청을 접수하면 이 목록에서 진행 상태를 확인할 수 있습니다.</span></div></td></tr>}
+              {loading ? <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><strong>예약 목록을 불러오고 있습니다…</strong></div></td></tr>
+                : error ? <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><strong>{error}</strong><span>예약 조회 권한과 연결 상태를 확인해 주세요.</span></div></td></tr>
+                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 보기</summary><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p></details></td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td>{profileRole === 'admin' && <td className="admin-action-cell"><DispatchActions reservation={reservation} onChanged={onRefresh} /></td>}</tr>)
+                    : <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><span className="table-empty-icon"><Icon name="calendar" size={20} /></span><strong>{searchText || statusFilter !== 'all' ? '검색 조건에 맞는 예약이 없습니다' : '접수된 예약이 없습니다'}</strong><span>예약 요청을 접수하면 이 목록에서 진행 상태를 확인할 수 있습니다.</span></div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -792,10 +794,25 @@ function DispatchActions({ reservation, onChanged }: { reservation: ReservationR
     } catch (err) { setError(err instanceof Error ? err.message : '처리하지 못했습니다. 상태를 새로고침해 확인해 주세요.') }
     finally { setBusy(false) }
   }
-  if (!pending && !['confirmed', 'in_progress'].includes(reservation.status)) return null
+  async function finishPending(next: 'external_dispatch' | 'cancelled') {
+    if (!supabase || busy) return
+    setBusy(true); setError('')
+    try {
+      const result = await supabase.rpc('resolve_pending_reservation', { p_reservation_id: reservation.id, p_next: next })
+      if (result.error) throw result.error
+      if (!result.data) throw new Error('변경 결과를 확인하지 못했습니다.')
+      onChanged()
+    } catch (err) { setError(err instanceof Error ? err.message : '처리하지 못했습니다. 새로고침 후 다시 시도해 주세요.') }
+    finally { setBusy(false) }
+  }
+  if (!pending && !['confirmed', 'in_progress'].includes(reservation.status)) return <span className="action-complete">처리 완료</span>
   return <div className="dispatch-actions">
     {pending && expired ? <small>24시간 경과 · 자동 취소 처리 대기</small> : pending ? <>
-      {!open ? <button type="button" className="subtle-button" disabled={busy} onClick={() => void prepare()}>9090 배차</button> : <>
+      {!open ? <div className="dispatch-choice-buttons">
+        <button type="button" className="dispatch-primary-button" disabled={busy} onClick={() => void prepare()}>9090 배차</button>
+        <button type="button" className="external-dispatch-button" disabled={busy} onClick={() => void finishPending('external_dispatch')}>타차량 배차</button>
+        <button type="button" className="cancel-reservation-button" disabled={busy} onClick={() => void finishPending('cancelled')}>예약 취소</button>
+      </div> : <>
         <label>9090 담당 기사<select aria-label="9090 담당 기사" value={driverId} onChange={event => setDriverId(event.target.value)} disabled={busy}><option value="">기사를 선택하세요</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}</option>)}</select></label>
         <button type="button" className="primary-button" disabled={busy || !driverId} onClick={() => void save()}>{busy ? '처리 중…' : '배차완료 확정'}</button>
         <button type="button" className="subtle-button" disabled={busy} onClick={() => setOpen(false)}>닫기</button>
@@ -803,6 +820,34 @@ function DispatchActions({ reservation, onChanged }: { reservation: ReservationR
     </> : <button type="button" className="subtle-button" disabled={busy} onClick={() => void save()}>{busy ? '처리 중…' : reservation.status === 'confirmed' ? '운행 시작' : '이송완료'}</button>}
     {error && <p className="form-error" role="alert">{error}</p>}
   </div>
+}
+
+type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
+
+function MobileAppTools() {
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null)
+  const [notificationState, setNotificationState] = useState('idle')
+  const [notice, setNotice] = useState('')
+  useEffect(() => {
+    const receivePrompt = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPromptEvent) }
+    window.addEventListener('beforeinstallprompt', receivePrompt)
+    return () => window.removeEventListener('beforeinstallprompt', receivePrompt)
+  }, [])
+  async function enableNotifications() {
+    setNotificationState('busy')
+    try { await connectPush(); setNotificationState('connected'); setNotice('이 기기의 푸시 구독을 서버에 등록했습니다.') }
+    catch (error) { setNotificationState('idle'); setNotice(error instanceof Error ? error.message : '연결에 실패했습니다.') }
+  }
+  async function install() {
+    if (!installPrompt) { setNotice('휴대폰 브라우저 메뉴에서 “홈 화면에 추가”를 선택해 주세요.'); return }
+    await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null)
+  }
+  return <section className="mobile-app-tools" aria-label="휴대폰 앱 설정">
+    <div><strong>9090 휴대폰 앱</strong><span>홈 화면에 설치하고 배차 알림을 켜세요.</span></div>
+    <button type="button" className="subtle-button" onClick={() => void install()}>휴대폰에 설치</button>
+    <button type="button" className="primary-button" disabled={notificationState === 'busy'} onClick={() => void enableNotifications()}>{notificationState === 'busy' ? '연결 중…' : notificationState === 'connected' ? '알림 다시 연결' : '배차 알림 연결'}</button>
+    {notice && <small>{notice}</small>}
+  </section>
 }
 
 function MyTrips({ userId }: { userId: string }) {
@@ -829,6 +874,7 @@ function MyTrips({ userId }: { userId: string }) {
     return () => { active = false; window.clearInterval(timer) }
   }, [userId, refresh, limit])
   return <section className="panel my-trips"><h1>내 운행 · 71나9090</h1><p>본인에게 배차완료된 예약과 운행 중인 예약입니다. 30초마다 갱신됩니다.</p>
+    <MobileAppTools />
     <button type="button" className="subtle-button" onClick={() => setRefresh(v => v + 1)}>새로고침</button>
     {error && <p className="form-error" role="alert">{error}</p>}
     {loading ? <p>불러오는 중…</p> : !rows.length && !error ? <p>현재 배정된 운행이 없습니다.</p> : rows.map(r => <article className="trip-card" key={r.id}>
@@ -841,7 +887,7 @@ function MyTrips({ userId }: { userId: string }) {
 }
 
 function App() {
-  const [adminActivePage, setAdminActivePage] = useState('대시보드')
+  const [adminActivePage, setAdminActivePage] = useState(() => window.location.hash === '#my-trips' ? '내 운행' : '대시보드')
   const [session, setSession] = useState<Session | null>(null)
   const [authLoading, setAuthLoading] = useState(supabaseConfigured)
   const [passwordRecovery, setPasswordRecovery] = useState(false)
