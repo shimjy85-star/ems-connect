@@ -724,7 +724,7 @@ function ReservationManagement({
   return (
     <>
       <section className="page-heading reservation-page-heading">
-        <div><p className="eyebrow">HOSPITAL WORKSPACE</p><h1>이송 예약 관리</h1><p className="heading-subtitle">왼쪽에서 이송을 신청하고 오른쪽에서 예약 현황을 확인합니다.</p></div>
+        <div><p className="eyebrow">HOSPITAL WORKSPACE</p><h1>이송 예약 관리</h1><p className="heading-subtitle">이송 예약 현황과 배차 상태를 확인합니다.</p></div>
       </section>
 
       {!supabaseConfigured && <div className="connection-banner" role="status"><span className="connection-indicator" /><div className="connection-copy"><strong>화면 미리보기</strong><span>실제 예약 정보 없이 병원 직원 화면을 미리 볼 수 있습니다. DB 연결 후 권한에 맞는 예약만 표시됩니다.</span></div></div>}
@@ -888,6 +888,16 @@ function MyTrips({ userId }: { userId: string }) {
 
 function App() {
   const [adminActivePage, setAdminActivePage] = useState(() => window.location.hash === '#my-trips' ? '내 운행' : '대시보드')
+  useEffect(() => {
+    const openTrips = () => { if (window.location.hash === '#my-trips') setAdminActivePage('내 운행') }
+    window.addEventListener('hashchange', openTrips)
+    const onMessage = (event: MessageEvent) => { if (event.data?.type === 'OPEN_MY_TRIPS') setAdminActivePage('내 운행') }
+    navigator.serviceWorker?.addEventListener('message', onMessage)
+    return () => {
+      window.removeEventListener('hashchange', openTrips)
+      navigator.serviceWorker?.removeEventListener('message', onMessage)
+    }
+  }, [])
   const [session, setSession] = useState<Session | null>(null)
   const [authLoading, setAuthLoading] = useState(supabaseConfigured)
   const [passwordRecovery, setPasswordRecovery] = useState(false)
