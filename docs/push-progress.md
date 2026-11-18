@@ -5,7 +5,7 @@
 - Supabase dispatch-push function deployed; push.sql applied successfully.
 - VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, PUSH_WORKER_SECRET stored only in Supabase function secrets. No secret values are in this repository.
 - Browser polling notifications were removed. Permission alone no longer reports a successful push connection.
-- Android device selected by user. Physical installation and receipt have not been tested.
+- Android installation, subscription and physical notification receipt verified on 2026-11-19. User confirmed receipt: “왔다. 다음”.
 
 ## Applied and verified
 
@@ -17,10 +17,12 @@
 6. Authorized fake booking tested inside a rolled-back transaction: confirmed transition queued notification, first claim succeeded, second claim returned zero. No permanent booking changes or fake notification sent.
 7. Manifest, PNG icons (192/512), service worker and notification-to-My-Trips navigation deployed. Public assets return HTTP 200. TypeScript/Vite build passed; lint has one pre-existing App.tsx:374 set-state-in-effect warning.
 
-## Remaining physical device verification
+## Physical device test — 2026-11-19
 
-Galaxy Chrome: k119.vercel.app → log in as jleejin@naver.com → My Trips → install → open installed app → connect dispatch notifications → allow. The user must grant the handset permission.
+User installed the app and enabled site notifications. Server confirmed one subscription for the designated driver. The existing authorized fake booking was temporarily changed from requested to confirmed with the designated driver and 9090 vehicle. The queue trigger created the delivery job; invoke_dispatch_push submitted request 18. Observed sent_at populated and one delivered endpoint. User confirmed the notification arrived on their phone. Physical background/closed-app state was requested but not independently confirmed.
 
-Then inspect subscription row count without displaying endpoints/keys. Use an authorized dispatch to confirm notification receipt while the app is closed and correct tap navigation. Actual Android delivery is NOT yet verified; no successful physical push receipt has been claimed.
+The fake booking was restored to requested with null driver/vehicle and approval metadata. No reservation was deleted. Notification delivery evidence remains in the queue. No patient information was included in the push payload.
+
+User confirmed that tapping the notification opens My Trips: “내 운행 화면이 열림”. Notification receipt and tap navigation passed. The fake booking is no longer assigned, so an empty My Trips list is expected. A complete normal UI dispatch-to-notification test and a sustained closed-app receipt test remain separate from this direct trigger test.
 
 Non-secret diagnostics: cron.job/job_run_details for ems-dispatch-push, net._http_response status/content, dispatch_push_queue counts. Never print request headers or decrypted Vault values. Original tables/data/RLS policies remain unchanged.
