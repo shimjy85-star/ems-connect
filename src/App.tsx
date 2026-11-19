@@ -850,7 +850,7 @@ function MobileAppTools() {
   </section>
 }
 
-function MyTrips({ userId }: { userId: string }) {
+function MyTrips({ userId, onChanged }: { userId: string; onChanged: () => void }) {
   const [rows, setRows] = useState<ReservationRow[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -880,7 +880,7 @@ function MyTrips({ userId }: { userId: string }) {
     {loading ? <p>불러오는 중…</p> : !rows.length && !error ? <p>현재 배정된 운행이 없습니다.</p> : rows.map(r => <article className="trip-card" key={r.id}>
       <h2>{patientNameFromNote(r.requested_note) || '이송 예약'}</h2><p>{formatScheduledAt(r.scheduled_at)} · {statusLabels[r.status]}</p>
       <p>{r.departure_address} → {r.destination_address}</p><p className="trip-notes">{r.requested_note}</p>
-      <DispatchActions reservation={r} onChanged={() => setRefresh(v => v + 1)} />
+      <DispatchActions reservation={r} onChanged={() => { setRefresh(v => v + 1); onChanged() }} />
     </article>)}
     {rows.length === limit && <button type="button" className="subtle-button" onClick={() => setLimit(v => v + 50)}>다음 운행 더 보기</button>}
   </section>
@@ -1268,7 +1268,7 @@ function App() {
         </header>
 
         <div className="page-wrap">
-          {activePage === '내 운행' && profileRole === 'admin' && session ? (<MyTrips userId={session.user.id} />) : activePage === '업체별 이송내역' && profileRole === 'admin' ? (
+          {activePage === '내 운행' && profileRole === 'admin' && session ? (<MyTrips userId={session.user.id} onChanged={refreshProfile} />) : activePage === '업체별 이송내역' && profileRole === 'admin' ? (
             <HospitalTransferHistory />
           ) : activePage === '가입 승인' && profileRole === 'admin' ? (
             <ApprovalManagement />

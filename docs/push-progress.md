@@ -23,6 +23,18 @@ User installed the app and enabled site notifications. Server confirmed one subs
 
 The fake booking was restored to requested with null driver/vehicle and approval metadata. No reservation was deleted. Notification delivery evidence remains in the queue. No patient information was included in the push payload.
 
-User confirmed that tapping the notification opens My Trips: “내 운행 화면이 열림”. Notification receipt and tap navigation passed. The fake booking is no longer assigned, so an empty My Trips list is expected. A complete normal UI dispatch-to-notification test and a sustained closed-app receipt test remain separate from this direct trigger test.
+User confirmed that tapping the notification opens My Trips: “내 운행 화면이 열림”. Notification receipt and tap navigation passed. The fake booking is no longer assigned, so an empty My Trips list is expected. A sustained closed-app receipt test remains unconfirmed.
+
+## Normal administrator UI flow — 2026-11-19
+
+- Reused the authorized fake booking, temporarily moved scheduled_at into the future; original created_at unchanged.
+- Clicked 9090 dispatch, selected 심재용, confirmed dispatch. Status became confirmed and My Trips displayed the correct fake patient, route and notes.
+- Scheduled worker automatically delivered to one device (sent_at populated, delivered_endpoints count 1), without manually invoking the worker.
+- Clicked Start Trip in My Trips; status changed to in_progress. Clicked Complete; booking disappeared from active trips. DB and refreshed reservation list both showed completed.
+- Found a stale parent reservation list after changing status in My Trips. Fixed by calling the shared reservation refresh callback after successful trip actions.
+- Fix deployed as dpl_FLdK7SwQF9ErTLFWufRwJEtymSmm (READY), asset index-GfkNk2GG.js. Retested completion in My Trips and navigation back to Reservations: completed appeared without manually refreshing. Build passed; pre-existing lint warning remains.
+- After interruption, read-only DB verification confirmed the final test restoration: requested, scheduled_at 2026-11-18 10:27:00+00, null driver/vehicle/approval metadata. No repeat dispatch test was needed.
+- Restored requested status, original scheduled_at (2026-11-18 10:27:00+00), null vehicle/driver/approval metadata. Original created_at retained. No booking deleted. Completion screenshot: dispatch-completed.jpg (fake data only).
+- This verifies the existing reservation's administrator/driver flow. A new hospital-account submission was not repeated during this test; its prior test is separate.
 
 Non-secret diagnostics: cron.job/job_run_details for ems-dispatch-push, net._http_response status/content, dispatch_push_queue counts. Never print request headers or decrypted Vault values. Original tables/data/RLS policies remain unchanged.
