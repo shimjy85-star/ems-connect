@@ -51,9 +51,22 @@ type ReservationRow = {
   status: ReservationStatus
   created_at: string
   requested_note?: string | null
+  trip_type?: TripType | null
+  waiting_required?: boolean | null
+  waiting_minutes?: number | null
 }
 
 type TripType = 'one_way' | 'round_trip'
+
+const reservationColumns = 'id, departure_address, destination_address, scheduled_at, status, created_at, requested_note, trip_type, waiting_required, waiting_minutes'
+
+function transportSummary(reservation: ReservationRow) {
+  const trip = reservation.trip_type === 'round_trip' ? '왕복' : reservation.trip_type === 'one_way' ? '편도' : '운행 유형 미확인'
+  const waiting = reservation.waiting_required === true
+    ? `현장 대기 필요 · ${reservation.waiting_minutes ?? 0}분`
+    : reservation.waiting_required === false ? '현장 대기 없음' : '대기 여부 미확인'
+  return `${trip} · ${waiting}`
+}
 
 function localDateTimeValue(date: Date) {
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
@@ -463,7 +476,7 @@ function HospitalTransferHistory() {
         const allRows: HospitalHistoryRow[] = []
         for (let offset = 0; offset < 10_000; offset += 1_000) {
           const { data, error: reservationError } = await client.from('reservations')
-            .select('id, hospital_id, departure_address, destination_address, scheduled_at, status, created_at, requested_note')
+            .select(`${reservationColumns}, hospital_id`)
             .gte('scheduled_at', new Date(weekStartTimestamp).toISOString()).lt('scheduled_at', new Date(weekEndTimestamp).toISOString())
             .order('scheduled_at', { ascending: true }).range(offset, offset + 999)
           if (reservationError) throw reservationError
@@ -490,7 +503,7 @@ function HospitalTransferHistory() {
 
   const downloadHospitalWeek = (hospital: HospitalOption) => {
     const hospitalRows = reservations.filter((reservation) => reservation.hospital_id === hospital.id)
-    const headers = ['예약번호', '환자명', '출발지', '목적지', '출발시각', '보호자 연락처', '감염 여부', '산소 사용 여부', '동승 여부', '상태', '추가 요청']
+    const headers = ['예약번호', '환자명', '출발지', '목적지', '출발시각', '보호자 연락처', '감염 여부', '산소 사용 여부', '동승 여부', '상태', '추가 요청', '운행·대기 정보']
     const rows = hospitalRows.map((reservation) => [
       reservation.id,
       patientNameFromNote(reservation.requested_note),
@@ -503,6 +516,7 @@ function HospitalTransferHistory() {
       noteValue(reservation.requested_note, '동승 여부'),
       statusLabels[reservation.status] ?? reservation.status,
       reservation.requested_note?.split('[추가 요청]')[1]?.trim() ?? '',
+      transportSummary(reservation),
     ])
     const blob = createXlsxBlob(headers, rows)
     const url = URL.createObjectURL(blob)
@@ -746,7 +760,7 @@ function ReservationManagement({
             <tbody>
               {loading ? <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><strong>예약 목록을 불러오고 있습니다…</strong></div></td></tr>
                 : error ? <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><strong>{error}</strong><span>예약 조회 권한과 연결 상태를 확인해 주세요.</span></div></td></tr>
-                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 보기</summary><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p></details></td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td>{profileRole === 'admin' && <td className="admin-action-cell"><DispatchActions reservation={reservation} onChanged={onRefresh} /></td>}</tr>)
+                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 보기</summary><p>{transportSummary(reservation)}</p><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p></details></td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td>{profileRole === 'admin' && <td className="admin-action-cell"><DispatchActions reservation={reservation} onChanged={onRefresh} /></td>}</tr>)
                     : <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><span className="table-empty-icon"><Icon name="calendar" size={20} /></span><strong>{searchText || statusFilter !== 'all' ? '검색 조건에 맞는 예약이 없습니다' : '접수된 예약이 없습니다'}</strong><span>예약 요청을 접수하면 이 목록에서 진행 상태를 확인할 수 있습니다.</span></div></td></tr>}
             </tbody>
           </table>
@@ -861,7 +875,7 @@ function MyTrips({ userId, onChanged }: { userId: string; onChanged: () => void 
     const load = async () => {
       if (!supabase) return
       try {
-        const result = await supabase.from('reservations').select('id, departure_address, destination_address, scheduled_at, status, created_at, requested_note')
+        const result = await supabase.from('reservations').select(reservationColumns)
           .eq('driver_id', userId).in('status', ['confirmed', 'in_progress']).order('scheduled_at').order('id').limit(limit)
         if (!active) return
         if (result.error) throw result.error
@@ -879,7 +893,7 @@ function MyTrips({ userId, onChanged }: { userId: string; onChanged: () => void 
     {error && <p className="form-error" role="alert">{error}</p>}
     {loading ? <p>불러오는 중…</p> : !rows.length && !error ? <p>현재 배정된 운행이 없습니다.</p> : rows.map(r => <article className="trip-card" key={r.id}>
       <h2>{patientNameFromNote(r.requested_note) || '이송 예약'}</h2><p>{formatScheduledAt(r.scheduled_at)} · {statusLabels[r.status]}</p>
-      <p>{r.departure_address} → {r.destination_address}</p><p className="trip-notes">{r.requested_note}</p>
+      <p><strong>{transportSummary(r)}</strong></p><p>{r.departure_address} → {r.destination_address}</p><p className="trip-notes">{r.requested_note}</p>
       <DispatchActions reservation={r} onChanged={() => { setRefresh(v => v + 1); onChanged() }} />
     </article>)}
     {rows.length === limit && <button type="button" className="subtle-button" onClick={() => setLimit(v => v + 50)}>다음 운행 더 보기</button>}
@@ -1010,7 +1024,6 @@ function App() {
       }
       setProfileState('ready')
 
-      const reservationColumns = 'id, departure_address, destination_address, scheduled_at, status, created_at, requested_note'
       const [reservationResult, upcomingResult] = await Promise.all([
         client.from('reservations').select(reservationColumns)
           .order('created_at', { ascending: false }).order('id', { ascending: true }).limit(25),
@@ -1075,6 +1088,40 @@ function App() {
     return () => { active = false }
   }, [session, refreshKey])
 
+  // Keep cross-account updates visible without unmounting forms or dispatch controls.
+  useEffect(() => {
+    const client = supabase
+    if (!client || !session || profileState !== 'ready' || reservationLoading || loadingMoreReservations) return
+    let active = true
+    let fetching = false
+    const refreshVisibleReservations = async () => {
+      if (document.visibilityState === 'hidden' || fetching) return
+      fetching = true
+      try {
+        const result = await client.from('reservations').select(reservationColumns)
+          .order('created_at', { ascending: false }).order('id', { ascending: true })
+          .limit(Math.max(25, reservations.length))
+        if (!active) return
+        if (result.error) throw result.error
+        setReservations(result.data as ReservationRow[])
+        setHasMoreReservations(result.data.length >= Math.max(25, reservations.length))
+        setReservationError('')
+      } catch {
+        if (active) setReservationError('예약 자동 갱신에 실패했습니다. 연결을 확인하고 새로고침해 주세요.')
+      } finally { fetching = false }
+    }
+    const timer = window.setInterval(() => void refreshVisibleReservations(), 30000)
+    const resume = () => { void refreshVisibleReservations() }
+    document.addEventListener('visibilitychange', resume)
+    window.addEventListener('online', resume)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', resume)
+      window.removeEventListener('online', resume)
+    }
+  }, [session, profileState, reservationLoading, loadingMoreReservations, reservations.length, refreshKey])
+
   const loadMoreReservations = useCallback(async () => {
     if (!supabase || loadingMoreReservations || !hasMoreReservations) return
     setLoadingMoreReservations(true)
@@ -1082,7 +1129,7 @@ function App() {
     try {
       const start = reservations.length
       const { data, error } = await supabase.from('reservations')
-        .select('id, departure_address, destination_address, scheduled_at, status, created_at, requested_note')
+        .select(reservationColumns)
         .order('created_at', { ascending: false }).order('id', { ascending: true }).range(start, start + 24)
       if (error) throw error
       const nextRows = (data ?? []) as ReservationRow[]
@@ -1364,7 +1411,7 @@ function App() {
                           : reservations.length > 0 ? reservations.slice(0, 5).map((reservation) => (
                             <tr className="reservation-row" key={reservation.id}>
                               <td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span></td>
-                              <td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 보기</summary><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p></details></td>
+                              <td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 보기</summary><p>{transportSummary(reservation)}</p><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p></details></td>
                               <td className="address-cell">{reservation.destination_address}</td>
                               <td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td>
                               <td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td>
