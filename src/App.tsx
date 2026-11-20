@@ -352,7 +352,7 @@ function AccountGate({
   )
 }
 
-function ApprovalManagement() {
+function ApprovalManagement({ refreshToken }: { refreshToken: number }) {
   const [profiles, setProfiles] = useState<ApprovalProfile[]>([])
   const [hospitals, setHospitals] = useState<HospitalOption[]>([])
   const [selectedHospitals, setSelectedHospitals] = useState<Record<string, string>>({})
@@ -386,7 +386,7 @@ function ApprovalManagement() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { void loadApprovals(false) }, [loadApprovals])
+  useEffect(() => { void loadApprovals(false) }, [loadApprovals, refreshToken])
 
   const handleCopyProfileId = async (profileId: string) => {
     try {
@@ -452,7 +452,7 @@ function ApprovalManagement() {
   )
 }
 
-function HospitalTransferHistory() {
+function HospitalTransferHistory({ refreshToken }: { refreshToken: number }) {
   const [weekStart, setWeekStart] = useState(() => koreanWeekStart(new Date()))
   const [currentWeekStart] = useState(() => koreanWeekStart(new Date()))
   const [hospitals, setHospitals] = useState<HospitalOption[]>([])
@@ -501,7 +501,7 @@ function HospitalTransferHistory() {
 
     void loadWeek()
     return () => { active = false }
-  }, [weekStartTimestamp, weekEndTimestamp, refreshKey])
+  }, [weekStartTimestamp, weekEndTimestamp, refreshKey, refreshToken])
 
   const downloadHospitalWeek = (hospital: HospitalOption) => {
     const hospitalRows = reservations.filter((reservation) => reservation.hospital_id === hospital.id)
@@ -866,7 +866,7 @@ function MobileAppTools() {
   </section>
 }
 
-function MyTrips({ userId, onChanged }: { userId: string; onChanged: () => void }) {
+function MyTrips({ userId, onChanged, refreshToken }: { userId: string; onChanged: () => void; refreshToken: number }) {
   const [rows, setRows] = useState<ReservationRow[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -888,7 +888,7 @@ function MyTrips({ userId, onChanged }: { userId: string; onChanged: () => void 
     void load()
     const timer = window.setInterval(() => void load(), 30000)
     return () => { active = false; window.clearInterval(timer) }
-  }, [userId, refresh, limit])
+  }, [userId, refresh, limit, refreshToken])
   return <section className="panel my-trips"><h1>내 운행 · 71나9090</h1><p>본인에게 배차완료된 예약과 운행 중인 예약입니다. 30초마다 갱신됩니다.</p>
     <MobileAppTools />
     <button type="button" className="subtle-button" onClick={() => setRefresh(v => v + 1)}>새로고침</button>
@@ -1286,7 +1286,6 @@ function App() {
         <div className="workspace-switcher">
           <span className="workspace-avatar">E</span>
           <span className="workspace-copy"><strong>{dashboardIsAdmin ? 'EMS 운영센터' : '병원 워크스페이스'}</strong><small>{dashboardIsAdmin ? '운영 워크스페이스' : '병원 업무 공간'}</small></span>
-          <span className="switcher-chevron">⌄</span>
         </div>
 
         <nav className="sidebar-nav" aria-label="주 메뉴">
@@ -1310,17 +1309,17 @@ function App() {
           <div className="topbar-actions">
             <span className="today-label">{today}</span>
             <button className="icon-button" type="button" aria-label="예약 목록 열기" title="예약 목록" onClick={() => setActivePage('예약 관리')}><Icon name="search" /></button>
-            <button className="icon-button" type="button" aria-label="예약 정보 새로고침" title="예약 정보 새로고침" onClick={() => setRefreshKey((value) => value + 1)} disabled={!session || activePage === '가입 승인' || activePage === '업체별 이송내역'}><Icon name="refresh" /></button>
+            <button className="icon-button" type="button" aria-label="현재 화면 새로고침" title="현재 화면 새로고침" onClick={() => setRefreshKey((value) => value + 1)} disabled={!session}><Icon name="refresh" /></button>
             <div className="topbar-divider" />
             <div className="top-avatar" aria-label={session ? profileName : '미로그인'}>{profileName.slice(0, 1) || '관'}</div>
           </div>
         </header>
 
         <div className="page-wrap">
-          {activePage === '내 운행' && profileRole === 'admin' && session ? (<MyTrips userId={session.user.id} onChanged={refreshProfile} />) : activePage === '업체별 이송내역' && profileRole === 'admin' ? (
-            <HospitalTransferHistory />
+          {activePage === '내 운행' && profileRole === 'admin' && session ? (<MyTrips userId={session.user.id} onChanged={refreshProfile} refreshToken={refreshKey} />) : activePage === '업체별 이송내역' && profileRole === 'admin' ? (
+            <HospitalTransferHistory refreshToken={refreshKey} />
           ) : activePage === '가입 승인' && profileRole === 'admin' ? (
-            <ApprovalManagement />
+            <ApprovalManagement refreshToken={refreshKey} />
           ) : activePage === '대시보드' && dashboardIsAdmin ? (
             <>
               <section className="page-heading">

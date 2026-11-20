@@ -70,6 +70,8 @@ export function ReservationChanges({ reservation: r, admin, onChanged }: { reser
     finally { setBusy(false) }
   }
   return <div className="reservation-change-tools">
+    {!editable && <p>운행 중이거나 종료된 예약은 이 화면에서 수정·취소할 수 없습니다.</p>}
+    {editable && !loaded && !error && <p role="status">수정·취소 권한과 변경 내역을 확인하고 있습니다…</p>}
     {pending && <section aria-label="승인 대기 요청"><strong>{pending.kind === 'cancel' ? '취소' : '수정'} 승인 대기</strong><p>사유: {pending.reason}</p>
       {pending.kind === 'edit' && <dl>{Object.entries(pending.proposed).map(([key, value]) => <div key={key}><dt>{labels[key] || key}</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{display(key, value)}</dd></div>)}</dl>}
       {admin && <><button type="button" disabled={busy} onClick={() => void review(true)}>요청 승인</button><button type="button" disabled={busy} onClick={() => void review(false)}>반려</button></>}
