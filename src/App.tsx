@@ -6,6 +6,7 @@ import { supabase, supabaseConfigured } from './lib/supabase'
 import { createXlsxBlob } from './lib/xlsx'
 import { TripPhoto } from './TripPhoto'
 import { ExternalDispatch } from './ExternalDispatch'
+import { BossDispatch } from './BossDispatch'
 import { ReservationChanges } from './ReservationChanges'
 
 type NavItem = {
@@ -1309,6 +1310,12 @@ function App() {
     return <AccountGate name={profileName} state={profileState} onRefresh={refreshProfile} onSignOut={() => void handleSignOut()} />
   }
 
+  if (window.location.pathname === '/boss.html') {
+    return profileRole === 'admin' && session
+      ? <BossDispatch name={profileName} onSignOut={() => void handleSignOut()} />
+      : <main className="boss-screen"><h1>관리자 계정으로 로그인해 주세요.</h1><p>배차 전용 화면은 사장님 관리자 계정에서 사용합니다.</p><button onClick={() => void handleSignOut()}>로그인 화면으로</button></main>
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -1324,6 +1331,7 @@ function App() {
 
         <nav className="sidebar-nav" aria-label="주 메뉴">
           <p className="nav-label">{dashboardIsAdmin ? '업무' : '병원 업무'}</p>
+          {dashboardIsAdmin && <a className="nav-item" href="/boss.html">사장님 간편 배차</a>}
           {sidebarNav.map((item) => <NavButton key={item.label} item={item} active={activePage === item.label} onClick={() => setActivePage(item.label)} />)}
           {profileRole === 'admin' && <><NavButton item={{ label: '내 운행', icon: 'calendar' }} active={activePage === '내 운행'} onClick={() => setActivePage('내 운행')} /><p className="nav-label">관리</p><NavButton item={{ label: '가입 승인', icon: 'history' }} active={activePage === '가입 승인'} onClick={() => setActivePage('가입 승인')} /><NavButton item={{ label: '업체별 이송내역', icon: 'calendar' }} active={activePage === '업체별 이송내역'} onClick={() => setActivePage('업체별 이송내역')} /></>}
         </nav>

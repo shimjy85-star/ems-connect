@@ -29,6 +29,7 @@ function copy(source, destination) {
   } else fs.copyFileSync(source, destination)
 }
 for (const name of ['src', 'public', 'package.json', 'package-lock.json', 'index.html', 'vite.config.ts', 'tsconfig.json', 'tsconfig.app.json', 'tsconfig.node.json', '.gitignore']) copy(path.join(root, name), path.join(target, name))
+if (fs.existsSync(path.join(root, 'boss.html'))) copy(path.join(root, 'boss.html'), path.join(target, 'boss.html'))
 copy(path.join(root, 'supabase'), path.join(target, 'reference-sql'))
 copy(path.join(root, 'docs/REUSE-GUIDE.md'), path.join(target, 'REUSE-GUIDE.md'))
 fs.writeFileSync(path.join(target, '.env.example'), '# New project only. Keep blank for disconnected preview.\nVITE_SUPABASE_URL=\nVITE_SUPABASE_ANON_KEY=\n')

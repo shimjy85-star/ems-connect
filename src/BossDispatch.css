@@ -1,0 +1,18 @@
+.boss-app { background: #edf2f7; }
+.boss-screen { max-width: 760px; margin: auto; padding: 20px 16px 40px; color: #142d43; font-family: system-ui, sans-serif; font-size: 20px; line-height: 1.6; }
+.boss-screen button { min-height: 60px; padding: 12px 18px; border: 2px solid #435b70; border-radius: 12px; font: 700 20px/1.4 system-ui,sans-serif; color: #18344d; background: white; cursor: pointer; }
+.boss-screen button:disabled { opacity: .5; cursor: default; }
+.boss-screen button:focus-visible,.boss-screen a:focus-visible { outline: 4px solid #d58a00; outline-offset: 4px; }
+.boss-header,.boss-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.boss-header h1 { margin: 0; font-size: 34px; }.boss-header p { margin: 0; }.boss-toolbar { margin-top: 24px; }.boss-toolbar strong { font-size: 25px; }
+.boss-updated { font-size: 16px; color: #44596c; }
+.boss-card { background: white; padding: 24px; margin: 20px 0; border: 2px solid #c5d3df; border-radius: 18px; overflow-wrap: anywhere; }
+.boss-card h2 { font-size: 28px; margin: 6px 0; }.boss-hospital { font-size: 23px; font-weight: 700; margin: 0; }.boss-time { font-size: 26px; font-weight: 800; color: #102d48; }
+.boss-card dl { display: grid; grid-template-columns: 50px minmax(0,1fr); gap: 12px; }.boss-card dt { font-weight: 800; }.boss-card dd { margin: 0; }.boss-notes { white-space: pre-wrap; }
+.boss-card summary { min-height: 48px; font-weight: 700; cursor: pointer; }
+.boss-choices { display: grid; gap: 12px; margin-top: 18px; }.boss-screen .boss-primary { background: #075eb3; color: white; border-color: #075eb3; font-size: 25px; min-height: 76px; }.boss-screen .boss-external { background: #fff0cf; border-color: #876000; color: #604300; font-size: 23px; }.boss-screen .boss-cancel { border-color: #ac3030; color: #8b2222; }
+.boss-confirm { border: 4px solid #075eb3; }.boss-confirm button { width: 100%; margin-top: 16px; }.boss-screen .boss-danger { background: #982828; color: white; }
+.boss-message,.boss-success,.boss-error { padding: 18px; border: 2px solid; border-radius: 12px; }.boss-success { background: #e5f6e9; color: #12502b; }.boss-error { background: #fff0ee; color: #8d2020; }.boss-message { background: white; }
+.boss-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; margin-top: 40px; }.boss-footer a { color: #174c82; }
+.boss-app .login-screen { padding: 20px; }.boss-app .login-card { width: min(100%,520px); }.boss-app .login-card input { min-height: 58px; font-size: 20px; }.boss-app .login-card label,.boss-app .login-card p,.boss-app .login-mode-button { font-size: 18px; }.boss-app .login-submit { min-height: 64px; font-size: 22px; }
+@media(max-width:420px){ .boss-header h1{font-size:30px}.boss-header button{font-size:17px}.boss-card{padding:18px}.boss-time{font-size:23px} }

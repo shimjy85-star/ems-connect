@@ -1,0 +1,6 @@
+{
+  "name": "EMS 사장님 배차", "short_name": "사장님 배차", "description": "예약 확인과 9090·타차량 배차",
+  "id": "/boss.html", "start_url": "/boss.html", "scope": "/", "display": "standalone",
+  "background_color": "#edf2f7", "theme_color": "#102d48", "lang": "ko",
+  "icons": [{"src":"/icon-192.png","sizes":"192x192","type":"image/png"},{"src":"/icon-512.png","sizes":"512x512","type":"image/png"}]
+}
