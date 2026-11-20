@@ -53,6 +53,7 @@ type ReservationRow = {
   created_at: string
   requested_note?: string | null
   updated_at?: string
+  trip_phase?: 'moving' | 'transporting' | 'completed' | null
   trip_type?: TripType | null
   waiting_required?: boolean | null
   waiting_minutes?: number | null
@@ -60,7 +61,30 @@ type ReservationRow = {
 
 type TripType = 'one_way' | 'round_trip'
 
-const reservationColumns = 'id, departure_address, destination_address, scheduled_at, status, created_at, updated_at, requested_note, trip_type, waiting_required, waiting_minutes'
+const reservationColumns = 'id, departure_address, destination_address, scheduled_at, status, created_at, updated_at, requested_note, trip_type, waiting_required, waiting_minutes, trip_phase'
+
+function TripProgress({ reservation: r }: { reservation: ReservationRow }) {
+  const phase = r.status === 'completed' ? 'completed' : r.status === 'in_progress' ? r.trip_phase || 'transporting' : null
+  return <p className="trip-progress" aria-live="polite">{phase ? `운행 상태: ${phase === 'moving' ? '● 이동중 → ○ 이송중 → ○ 완료' : phase === 'transporting' ? '✓ 이동중 → ● 이송중 → ○ 완료' : '✓ 이동중 → ✓ 이송중 → ● 완료'}` : `운행 상태: ${statusLabels[r.status]}${r.status === 'confirmed' ? ' · 출발 대기' : ''}`}</p>
+}
+
+function TripButtons({ reservation: r, onChanged }: { reservation: ReservationRow; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const phase = r.status === 'confirmed' ? 'assigned' : r.trip_phase || 'transporting'
+  const next = phase === 'assigned' ? 'moving' : phase === 'moving' ? 'transporting' : 'completed'
+  async function advance() {
+    if (!supabase || busy) return
+    setBusy(true); setError('')
+    try {
+      const result = await supabase.rpc('advance_trip', { p_id: r.id, p_expected: phase, p_next: next })
+      if (result.error) throw result.error
+      onChanged()
+    } catch (e) { setError(e instanceof Error ? e.message : '상태 변경에 실패했습니다. 새로고침 후 확인해 주세요.') }
+    finally { setBusy(false) }
+  }
+  return <div><TripProgress reservation={r} /><div className="trip-buttons">{(['moving', 'transporting', 'completed'] as const).map((value, i) => <button type="button" className="primary-button" key={value} disabled={busy || next !== value || !['confirmed', 'in_progress'].includes(r.status)} onClick={() => void advance()}>{busy && next === value ? '저장 중…' : ['이동중', '이송중', '완료'][i]}</button>)}</div>{error && <p role="alert">{error}</p>}</div>
+}
 
 function transportSummary(reservation: ReservationRow) {
   const trip = reservation.trip_type === 'round_trip' ? '왕복' : reservation.trip_type === 'one_way' ? '편도' : '운행 유형 미확인'
@@ -762,7 +786,7 @@ function ReservationManagement({
             <tbody>
               {loading ? <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><strong>예약 목록을 불러오고 있습니다…</strong></div></td></tr>
                 : error ? <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><strong>{error}</strong><span>예약 조회 권한과 연결 상태를 확인해 주세요.</span></div></td></tr>
-                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 · 수정/취소</summary><p>{transportSummary(reservation)}</p><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p><ReservationChanges reservation={reservation} admin={profileRole === 'admin'} onChanged={onRefresh} /></details></td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td>{profileRole === 'admin' && <td className="admin-action-cell"><DispatchActions reservation={reservation} onChanged={onRefresh} /></td>}</tr>)
+                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 · 운행 상태 · 수정/취소</summary><TripProgress reservation={reservation} /><p>{transportSummary(reservation)}</p><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p><ReservationChanges reservation={reservation} admin={profileRole === 'admin'} onChanged={onRefresh} /></details></td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td>{profileRole === 'admin' && <td className="admin-action-cell"><DispatchActions reservation={reservation} onChanged={onRefresh} /></td>}</tr>)
                     : <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><span className="table-empty-icon"><Icon name="calendar" size={20} /></span><strong>{searchText || statusFilter !== 'all' ? '검색 조건에 맞는 예약이 없습니다' : '접수된 예약이 없습니다'}</strong><span>예약 요청을 접수하면 이 목록에서 진행 상태를 확인할 수 있습니다.</span></div></td></tr>}
             </tbody>
           </table>
@@ -833,7 +857,7 @@ function DispatchActions({ reservation, onChanged }: { reservation: ReservationR
         <button type="button" className="primary-button" disabled={busy || !driverId} onClick={() => void save()}>{busy ? '처리 중…' : '배차완료 확정'}</button>
         <button type="button" className="subtle-button" disabled={busy} onClick={() => setOpen(false)}>닫기</button>
       </>}
-    </> : <button type="button" className="subtle-button" disabled={busy} onClick={() => void save()}>{busy ? '처리 중…' : reservation.status === 'confirmed' ? '운행 시작' : '이송완료'}</button>}
+    </> : <TripButtons reservation={reservation} onChanged={onChanged} />}
     {error && <p className="form-error" role="alert">{error}</p>}
   </div>
 }
@@ -886,10 +910,11 @@ function MyTrips({ userId, onChanged, refreshToken }: { userId: string; onChange
       finally { if (active) setLoading(false) }
     }
     void load()
-    const timer = window.setInterval(() => void load(), 30000)
-    return () => { active = false; window.clearInterval(timer) }
+    const timer = window.setInterval(() => void load(), 5000)
+    const channel = supabase?.channel(`my-trips-${userId}`).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'reservations' }, () => void load()).subscribe()
+    return () => { active = false; window.clearInterval(timer); if (channel) void supabase?.removeChannel(channel) }
   }, [userId, refresh, limit, refreshToken])
-  return <section className="panel my-trips"><h1>내 운행 · 71나9090</h1><p>본인에게 배차완료된 예약과 운행 중인 예약입니다. 30초마다 갱신됩니다.</p>
+  return <section className="panel my-trips"><h1>내 운행 · 71나9090</h1><p>이동중 → 이송중 → 완료 순서로 처리하세요. 상태는 실시간으로 공유되며 연결 지연 시 5초마다 다시 확인합니다.</p>
     <MobileAppTools />
     <button type="button" className="subtle-button" onClick={() => setRefresh(v => v + 1)}>새로고침</button>
     {error && <p className="form-error" role="alert">{error}</p>}
@@ -1112,13 +1137,15 @@ function App() {
         if (active) setReservationError('예약 자동 갱신에 실패했습니다. 연결을 확인하고 새로고침해 주세요.')
       } finally { fetching = false }
     }
-    const timer = window.setInterval(() => void refreshVisibleReservations(), 30000)
+    const timer = window.setInterval(() => void refreshVisibleReservations(), 5000)
+    const channel = client.channel(`reservation-progress-${session.user.id}`).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'reservations' }, () => void refreshVisibleReservations()).subscribe()
     const resume = () => { void refreshVisibleReservations() }
     document.addEventListener('visibilitychange', resume)
     window.addEventListener('online', resume)
     return () => {
       active = false
       window.clearInterval(timer)
+      void client.removeChannel(channel)
       document.removeEventListener('visibilitychange', resume)
       window.removeEventListener('online', resume)
     }
