@@ -5,6 +5,7 @@ import { connectPush } from './lib/push'
 import { supabase, supabaseConfigured } from './lib/supabase'
 import { createXlsxBlob } from './lib/xlsx'
 import { TripPhoto } from './TripPhoto'
+import { ExternalDispatch } from './ExternalDispatch'
 import { ReservationChanges } from './ReservationChanges'
 
 type NavItem = {
@@ -15,6 +16,7 @@ type NavItem = {
 const mainNav: NavItem[] = [
   { label: '대시보드', icon: 'grid' },
   { label: '예약 관리', icon: 'calendar' },
+  { label: '타차량배차', icon: 'history' },
 ]
 
 const hospitalNav: NavItem[] = [mainNav[1]]
@@ -758,6 +760,7 @@ function ReservationManagement({
   const canRequest = profileRole === 'hospital_staff' || profileRole === 'hospital_admin'
   const canViewForm = !supabaseConfigured || canRequest
   const filteredReservations = reservations.filter((reservation) => {
+    if (profileRole === 'admin' && reservation.status === 'external_dispatch') return false
     const matchesSearch = `${reservation.id} ${patientNameFromNote(reservation.requested_note)} ${reservation.departure_address} ${reservation.destination_address}`.toLowerCase().includes(searchText.toLowerCase())
     return matchesSearch && (statusFilter === 'all' || reservation.status === statusFilter)
   })
@@ -775,10 +778,10 @@ function ReservationManagement({
         {canViewForm && <ReservationForm session={session} hospitalId={hospitalId} canSubmitRequest={canRequest} onCreated={() => { setNotice('예약 요청이 접수되었습니다.'); onRefresh() }} />}
         <section className="panel reservation-management-panel">
         <div className="management-toolbar">
-          <div><h2>예약 목록</h2><p>{loading ? '불러오는 중…' : `${reservations.length}건 표시 · 현재 계정에 허용된 예약`}</p></div>
+          <div><h2>예약 목록</h2><p>{loading ? '불러오는 중…' : `${reservations.filter(r => profileRole !== 'admin' || r.status !== 'external_dispatch').length}건 표시 · 현재 계정에 허용된 예약`}</p></div>
           <div className="reservation-filters">
             <label className="search-field"><Icon name="search" size={16} /><input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="주소 또는 예약 번호 검색" /></label>
-            <select aria-label="예약 상태 필터" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">전체 상태</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+            <select aria-label="예약 상태 필터" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">전체 상태</option>{Object.entries(statusLabels).filter(([value]) => profileRole !== 'admin' || value !== 'external_dispatch').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
           </div>
         </div>
         <div className="table-wrap">
@@ -1349,6 +1352,8 @@ function App() {
         <div className="page-wrap">
           {activePage === '내 운행' && profileRole === 'admin' && session ? (<MyTrips userId={session.user.id} onChanged={refreshProfile} refreshToken={refreshKey} />) : activePage === '업체별 이송내역' && profileRole === 'admin' ? (
             <HospitalTransferHistory refreshToken={refreshKey} />
+          ) : activePage === '타차량배차' && profileRole === 'admin' ? (
+            <ExternalDispatch refreshToken={refreshKey} />
           ) : activePage === '가입 승인' && profileRole === 'admin' ? (
             <ApprovalManagement refreshToken={refreshKey} />
           ) : activePage === '대시보드' && dashboardIsAdmin ? (
