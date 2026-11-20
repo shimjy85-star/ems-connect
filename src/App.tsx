@@ -4,6 +4,7 @@ import './App.css'
 import { connectPush } from './lib/push'
 import { supabase, supabaseConfigured } from './lib/supabase'
 import { createXlsxBlob } from './lib/xlsx'
+import { ReservationChanges } from './ReservationChanges'
 
 type NavItem = {
   label: string
@@ -51,6 +52,7 @@ type ReservationRow = {
   status: ReservationStatus
   created_at: string
   requested_note?: string | null
+  updated_at?: string
   trip_type?: TripType | null
   waiting_required?: boolean | null
   waiting_minutes?: number | null
@@ -58,7 +60,7 @@ type ReservationRow = {
 
 type TripType = 'one_way' | 'round_trip'
 
-const reservationColumns = 'id, departure_address, destination_address, scheduled_at, status, created_at, requested_note, trip_type, waiting_required, waiting_minutes'
+const reservationColumns = 'id, departure_address, destination_address, scheduled_at, status, created_at, updated_at, requested_note, trip_type, waiting_required, waiting_minutes'
 
 function transportSummary(reservation: ReservationRow) {
   const trip = reservation.trip_type === 'round_trip' ? '왕복' : reservation.trip_type === 'one_way' ? '편도' : '운행 유형 미확인'
@@ -760,7 +762,7 @@ function ReservationManagement({
             <tbody>
               {loading ? <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><strong>예약 목록을 불러오고 있습니다…</strong></div></td></tr>
                 : error ? <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><strong>{error}</strong><span>예약 조회 권한과 연결 상태를 확인해 주세요.</span></div></td></tr>
-                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 보기</summary><p>{transportSummary(reservation)}</p><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p></details></td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td>{profileRole === 'admin' && <td className="admin-action-cell"><DispatchActions reservation={reservation} onChanged={onRefresh} /></td>}</tr>)
+                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 · 수정/취소</summary><p>{transportSummary(reservation)}</p><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p><ReservationChanges reservation={reservation} admin={profileRole === 'admin'} onChanged={onRefresh} /></details></td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td>{profileRole === 'admin' && <td className="admin-action-cell"><DispatchActions reservation={reservation} onChanged={onRefresh} /></td>}</tr>)
                     : <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><span className="table-empty-icon"><Icon name="calendar" size={20} /></span><strong>{searchText || statusFilter !== 'all' ? '검색 조건에 맞는 예약이 없습니다' : '접수된 예약이 없습니다'}</strong><span>예약 요청을 접수하면 이 목록에서 진행 상태를 확인할 수 있습니다.</span></div></td></tr>}
             </tbody>
           </table>

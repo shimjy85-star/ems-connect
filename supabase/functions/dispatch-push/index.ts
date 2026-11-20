@@ -61,7 +61,10 @@ Deno.serve(async request => {
       const { data: driver, error: driverError } = await admin.from('drivers').select('is_active').eq('id', job.driver_id).maybeSingle()
       const { data: profile, error: profileError } = await admin.from('profiles').select('is_active,role').eq('id', job.driver_id).maybeSingle()
       if (driverError || profileError) throw driverError || profileError
-      if (reservation?.status !== 'confirmed' || reservation.driver_id !== job.driver_id || !driver?.is_active || !profile?.is_active || profile.role !== 'admin') {
+      const validReservation = job.event_kind === 'cancel'
+        ? reservation?.status === 'cancelled'
+        : reservation?.status === 'confirmed' && reservation.driver_id === job.driver_id
+      if (!validReservation || !driver?.is_active || !profile?.is_active || profile.role !== 'admin') {
         await finish({ sent_at: new Date().toISOString() }); continue
       }
       const { data: subscriptions, error: queryError } = await admin.from('push_subscriptions').select('*').eq('user_id', job.driver_id)
@@ -74,7 +77,8 @@ Deno.serve(async request => {
         if (Date.now() >= deadline) { successful = false; break }
         if (!allowedEndpoint(s.endpoint)) { successful = false; continue }
         try {
-          await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, JSON.stringify({ title: '새 9090 배차가 도착했습니다', tag: job.reservation_id }), { TTL: 300, timeout: 5000 })
+          const title = job.event_kind === 'cancel' ? '9090 배차가 취소되었습니다' : job.event_kind === 'change' ? '9090 배차 정보가 변경되었습니다' : '새 9090 배차가 도착했습니다'
+          await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, JSON.stringify({ title, tag: job.reservation_id }), { TTL: 300, timeout: 5000 })
           sent++
           delivered.add(s.endpoint)
           await finish({ delivered_endpoints: [...delivered] })
