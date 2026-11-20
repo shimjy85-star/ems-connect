@@ -1312,7 +1312,7 @@ function App() {
 
   if (window.location.pathname === '/boss.html') {
     return profileRole === 'admin' && session
-      ? <BossDispatch name={profileName} onSignOut={() => void handleSignOut()} />
+      ? <BossDispatch onSignOut={() => void handleSignOut()} />
       : <main className="boss-screen"><h1>관리자 계정으로 로그인해 주세요.</h1><p>배차 전용 화면은 사장님 관리자 계정에서 사용합니다.</p><button onClick={() => void handleSignOut()}>로그인 화면으로</button></main>
   }
 

@@ -9,7 +9,7 @@ const choiceLabel = { '9090': '9090 배차', external_dispatch: '타차량 배�
 const patient = (r: Row) => r.requested_note?.match(/^환자명:\s*(.+)$/m)?.[1]?.trim() || '환자명 확인 필요'
 const time = (value: string) => new Date(value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short', hour: 'numeric', minute: '2-digit' })
 
-export function BossDispatch({ name, onSignOut }: { name: string; onSignOut: () => void }) {
+export function BossDispatch({ onSignOut }: { onSignOut: () => void }) {
   const [rows, setRows] = useState<Row[]>([])
   const [hospitals, setHospitals] = useState<Record<string, string>>({})
   const [selected, setSelected] = useState<{ row: Row; choice: Choice } | null>(null)
@@ -82,7 +82,7 @@ export function BossDispatch({ name, onSignOut }: { name: string; onSignOut: () 
     catch { setInstallNotice('브라우저 메뉴에서 홈 화면에 추가를 선택해 주세요.') }
   }
   const expired = (r: Row) => now >= new Date(r.created_at).getTime() + 86400000
-  return <main className="boss-screen"><header className="boss-header"><div><small>EMS CONNECT</small><h1>사장님 배차</h1><p>{name}님</p></div><button onClick={() => void install()}>휴대폰에 설치</button></header>
+  return <main className="boss-screen"><header className="boss-header"><div><small>EMS CONNECT</small><h1>사장님 배차</h1></div><button onClick={() => void install()}>휴대폰에 설치</button></header>
     {installNotice && <p className="boss-message" role="status">{installNotice}</p>}
     <div className="boss-toolbar"><strong>배차할 예약 {rows.filter(r => !expired(r)).length}건</strong><button disabled={busy} onClick={() => setRefresh(v => v + 1)}>새로고침</button></div>
     <p className="boss-updated">{lastUpdate ? `마지막 확인 ${lastUpdate} · 자동으로 새 예약을 확인합니다.` : '예약을 확인하고 있습니다.'}</p>
