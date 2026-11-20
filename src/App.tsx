@@ -4,6 +4,7 @@ import './App.css'
 import { connectPush } from './lib/push'
 import { supabase, supabaseConfigured } from './lib/supabase'
 import { createXlsxBlob } from './lib/xlsx'
+import { TripPhoto } from './TripPhoto'
 import { ReservationChanges } from './ReservationChanges'
 
 type NavItem = {
@@ -782,12 +783,12 @@ function ReservationManagement({
         </div>
         <div className="table-wrap">
           <table className="management-table">
-            <thead><tr><th>예약 번호</th><th>출발지</th><th>목적지</th><th>희망 일시</th><th>상태</th>{profileRole === 'admin' && <th className="admin-action-heading">관리자 처리</th>}</tr></thead>
+            <thead><tr><th>예약 번호</th><th>희망 일시</th><th>출발지</th><th>목적지</th><th>운행상태</th><th>첨부파일</th>{profileRole === 'admin' && <th className="admin-action-heading">관리자 처리</th>}</tr></thead>
             <tbody>
-              {loading ? <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><strong>예약 목록을 불러오고 있습니다…</strong></div></td></tr>
-                : error ? <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><strong>{error}</strong><span>예약 조회 권한과 연결 상태를 확인해 주세요.</span></div></td></tr>
-                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 · 운행 상태 · 수정/취소</summary><TripProgress reservation={reservation} /><p>{transportSummary(reservation)}</p><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p><ReservationChanges reservation={reservation} admin={profileRole === 'admin'} onChanged={onRefresh} /></details></td><td className="address-cell">{reservation.destination_address}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td>{profileRole === 'admin' && <td className="admin-action-cell"><DispatchActions reservation={reservation} onChanged={onRefresh} /></td>}</tr>)
-                    : <tr><td colSpan={profileRole === 'admin' ? 6 : 5}><div className="table-empty"><span className="table-empty-icon"><Icon name="calendar" size={20} /></span><strong>{searchText || statusFilter !== 'all' ? '검색 조건에 맞는 예약이 없습니다' : '접수된 예약이 없습니다'}</strong><span>예약 요청을 접수하면 이 목록에서 진행 상태를 확인할 수 있습니다.</span></div></td></tr>}
+              {loading ? <tr><td colSpan={profileRole === 'admin' ? 7 : 6}><div className="table-empty"><strong>예약 목록을 불러오고 있습니다…</strong></div></td></tr>
+                : error ? <tr><td colSpan={profileRole === 'admin' ? 7 : 6}><div className="table-empty"><strong>{error}</strong><span>예약 조회 권한과 연결 상태를 확인해 주세요.</span></div></td></tr>
+                  : filteredReservations.length ? filteredReservations.map((reservation) => <tr className="reservation-row" key={reservation.id}><td><span className="reservation-id">#{reservation.id.slice(0, 8).toUpperCase()}</span>{patientNameFromNote(reservation.requested_note) && <span className="reservation-patient-name">{patientNameFromNote(reservation.requested_note)}</span>}</td><td className="date-cell">{formatScheduledAt(reservation.scheduled_at)}</td><td className="address-cell">{reservation.departure_address}<details className="reservation-details"><summary>예약 상세 · 운행 상태 · 수정/취소</summary><TripProgress reservation={reservation} /><p>{transportSummary(reservation)}</p><p>{reservation.requested_note || '추가 정보가 없습니다.'}</p><ReservationChanges reservation={reservation} admin={profileRole === 'admin'} onChanged={onRefresh} /></details></td><td className="address-cell">{reservation.destination_address}</td><td><span className={`status-pill status-${reservation.status}`}>{statusLabels[reservation.status] ?? reservation.status}</span></td><td><TripPhoto id={reservation.id} /></td>{profileRole === 'admin' && <td className="admin-action-cell"><DispatchActions reservation={reservation} onChanged={onRefresh} /></td>}</tr>)
+                    : <tr><td colSpan={profileRole === 'admin' ? 7 : 6}><div className="table-empty"><span className="table-empty-icon"><Icon name="calendar" size={20} /></span><strong>{searchText || statusFilter !== 'all' ? '검색 조건에 맞는 예약이 없습니다' : '접수된 예약이 없습니다'}</strong><span>예약 요청을 접수하면 이 목록에서 진행 상태를 확인할 수 있습니다.</span></div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -891,6 +892,7 @@ function MobileAppTools() {
 }
 
 function MyTrips({ userId, onChanged, refreshToken }: { userId: string; onChanged: () => void; refreshToken: number }) {
+  const [showCompleted, setShowCompleted] = useState(false)
   const [rows, setRows] = useState<ReservationRow[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -902,7 +904,7 @@ function MyTrips({ userId, onChanged, refreshToken }: { userId: string; onChange
       if (!supabase) return
       try {
         const result = await supabase.from('reservations').select(reservationColumns)
-          .eq('driver_id', userId).in('status', ['confirmed', 'in_progress']).order('scheduled_at').order('id').limit(limit)
+          .eq('driver_id', userId).in('status', showCompleted ? ['completed'] : ['confirmed', 'in_progress']).order('scheduled_at', { ascending: !showCompleted }).order('id').limit(limit)
         if (!active) return
         if (result.error) throw result.error
         setRows(result.data ?? []); setError('')
@@ -913,15 +915,17 @@ function MyTrips({ userId, onChanged, refreshToken }: { userId: string; onChange
     const timer = window.setInterval(() => void load(), 5000)
     const channel = supabase?.channel(`my-trips-${userId}`).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'reservations' }, () => void load()).subscribe()
     return () => { active = false; window.clearInterval(timer); if (channel) void supabase?.removeChannel(channel) }
-  }, [userId, refresh, limit, refreshToken])
+  }, [userId, refresh, limit, refreshToken, showCompleted])
   return <section className="panel my-trips"><h1>내 운행 · 71나9090</h1><p>이동중 → 이송중 → 완료 순서로 처리하세요. 상태는 실시간으로 공유되며 연결 지연 시 5초마다 다시 확인합니다.</p>
     <MobileAppTools />
+    <label><input type="checkbox" checked={showCompleted} onChange={e => { setShowCompleted(e.target.checked); setRows([]); setLoading(true); setLimit(50) }} />완료 운행 보기 · 완료 후에도 사진을 첨부할 수 있습니다.</label>
     <button type="button" className="subtle-button" onClick={() => setRefresh(v => v + 1)}>새로고침</button>
     {error && <p className="form-error" role="alert">{error}</p>}
     {loading ? <p>불러오는 중…</p> : !rows.length && !error ? <p>현재 배정된 운행이 없습니다.</p> : rows.map(r => <article className="trip-card" key={r.id}>
       <h2>{patientNameFromNote(r.requested_note) || '이송 예약'}</h2><p>{formatScheduledAt(r.scheduled_at)} · {statusLabels[r.status]}</p>
       <p><strong>{transportSummary(r)}</strong></p><p>{r.departure_address} → {r.destination_address}</p><p className="trip-notes">{r.requested_note}</p>
       <DispatchActions reservation={r} onChanged={() => { setRefresh(v => v + 1); onChanged() }} />
+      <TripPhoto id={r.id} upload />
     </article>)}
     {rows.length === limit && <button type="button" className="subtle-button" onClick={() => setLimit(v => v + 50)}>다음 운행 더 보기</button>}
   </section>
