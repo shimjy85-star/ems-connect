@@ -1,5 +1,15 @@
 # Operational readiness work
 
+## 2026-11-21 hospital photo arrival alerts
+
+- Applied `supabase/photo-arrival.sql`: additive reservation photo timestamp, backfill from existing private photo objects, and SECURITY INVOKER recording RPC. Existing RLS policies and photo access remain unchanged. Only the active assigned 9090 admin-driver can record arrivals through the RPC.
+- Upload now records the arrival after successful private storage upload. Failure exposes a retry button; it does not claim notification success. Replacing a photo creates a new arrival timestamp.
+- Active hospital accounts receive an in-site native dialog for their own hospital's new photos, with patient, scheduled date/time, route, and authenticated download. Realtime plus 5-second fallback and resume/online refresh. Ordered queue and per-account/hospital local acknowledgement cursor avoid repeating acknowledged arrivals; first visit establishes a baseline rather than announcing all legacy photos. This is not a closed-browser OS notification. Browser-cleared storage starts a new baseline.
+- Reservation rows with recorded photos have blue shading, a left border, a text badge and download button. Filters provide all/with/without photos; existing storage polling remains available for file state.
+- Production deployment `dpl_DbiBuWzAENEtxurWApGzHxdoVxEn` READY, k119.vercel.app alias verified. Build and lint passed with existing bundle-size and App.tsx effect warnings.
+- Verification: authenticated driver RPC succeeded inside a rolled-back transaction; hospital RPC was rejected with the expected role error. Live upload via driver UI on the previously authorized fake booking saved an innocuous app icon and showed notification-recording success. SQL under the hospital JWT subject verified the new timestamp was readable and the other hospital's simulation booking remained hidden. Fake booking was restored to cancelled, original scheduled time, null driver/vehicle, and original backfilled photo timestamp. The active user simulation was left intact.
+- Real component in an isolated fake-data browser fixture verified other-hospital filtering, two queued arrivals, next/dismiss, no repeat after requery, and popup download. Production browser verified attachment badge/shading and with/without filters. Hospital popup was component-tested; a separate live hospital browser login was not available for a complete two-account visual test. No claim of physical hospital-device receipt.
+
 ## Agreed business rule
 
 2026-11-19 user approved: hospital staff can edit/cancel before dispatch. After dispatch, request changes for administrator approval. Hospital cannot directly alter in-progress/completed trips.
