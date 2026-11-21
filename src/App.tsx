@@ -334,6 +334,13 @@ function noteValue(note: string | null | undefined, label: string) {
   return note?.match(new RegExp(`^${safeLabel}:\\s*(.*)$`, 'm'))?.[1]?.trim() ?? ''
 }
 
+function GuardianPhone({ note }: { note: string | null | undefined }) {
+  const phone = noteValue(note, '보호자 연락처')
+  const digits = phone.replace(/[\s()-]/g, '')
+  const valid = /^(?:01[016789]\d{7,8}|\+821[016789]\d{7,8})$/.test(digits)
+  return valid ? <a className="driver-call-link" href={`tel:${digits}`} aria-label={`보호자 ${phone} 전화 걸기`}><strong>{phone}</strong><span>전화 걸기</span></a> : <span>{phone || '미입력'}</span>
+}
+
 function AccountGate({
   name,
   state,
@@ -930,7 +937,7 @@ function MyTrips({ userId, onChanged, refreshToken }: { userId: string; onChange
     {loading ? <p>불러오는 중…</p> : !rows.length && !error ? <p>현재 배정된 운행이 없습니다.</p> : rows.map(r => <article className="trip-card" key={r.id}>
       <header className="driver-card-header"><span className={`status-pill status-${r.status}`}>{r.status === 'in_progress' ? r.trip_phase === 'moving' ? '이동중' : '이송중' : statusLabels[r.status]}</span><span className="driver-reference">#{r.id.slice(0, 8).toUpperCase()}</span><h2>{patientNameFromNote(r.requested_note) || '환자명 확인 필요'}</h2><p className="driver-departure-time"><span>출발 시각</span><strong>{formatScheduledAt(r.scheduled_at)}</strong></p></header>
       <dl className="driver-route"><div><dt>출발지</dt><dd>{r.departure_address}</dd></div><div><dt>목적지</dt><dd>{r.destination_address}</dd></div></dl>
-      <section className="driver-information" aria-label="환자 및 이송 정보"><h3>연락처 · 이송 정보</h3><dl><div className="driver-phone"><dt>보호자 연락처</dt><dd>{noteValue(r.requested_note, '보호자 연락처') || '미입력'}</dd></div><div><dt>운행 유형</dt><dd>{r.trip_type === 'round_trip' ? '왕복' : r.trip_type === 'one_way' ? '편도' : '확인 필요'}</dd></div><div><dt>현장 대기</dt><dd>{r.waiting_required ? `필요 · ${r.waiting_minutes ?? 0}분` : r.waiting_required === false ? '없음' : '확인 필요'}</dd></div><div className={noteValue(r.requested_note, '감염 여부') !== '없음' ? 'driver-caution' : ''}><dt>감염 여부</dt><dd>{noteValue(r.requested_note, '감염 여부') || '확인 필요'}</dd></div><div className={noteValue(r.requested_note, '산소 사용 여부') === '필요' ? 'driver-caution' : ''}><dt>산소</dt><dd>{noteValue(r.requested_note, '산소 사용 여부') || '확인 필요'}</dd></div><div><dt>동승</dt><dd>{noteValue(r.requested_note, '동승 여부') || '확인 필요'}</dd></div></dl></section>
+      <section className="driver-information" aria-label="환자 및 이송 정보"><h3>연락처 · 이송 정보</h3><dl><div className="driver-phone"><dt>보호자 연락처</dt><dd><GuardianPhone note={r.requested_note} /></dd></div><div><dt>운행 유형</dt><dd>{r.trip_type === 'round_trip' ? '왕복' : r.trip_type === 'one_way' ? '편도' : '확인 필요'}</dd></div><div><dt>현장 대기</dt><dd>{r.waiting_required ? `필요 · ${r.waiting_minutes ?? 0}분` : r.waiting_required === false ? '없음' : '확인 필요'}</dd></div><div className={noteValue(r.requested_note, '감염 여부') !== '없음' ? 'driver-caution' : ''}><dt>감염 여부</dt><dd>{noteValue(r.requested_note, '감염 여부') || '확인 필요'}</dd></div><div className={noteValue(r.requested_note, '산소 사용 여부') === '필요' ? 'driver-caution' : ''}><dt>산소</dt><dd>{noteValue(r.requested_note, '산소 사용 여부') || '확인 필요'}</dd></div><div><dt>동승</dt><dd>{noteValue(r.requested_note, '동승 여부') || '확인 필요'}</dd></div></dl></section>
       <section className="driver-extra"><h3>추가 요청</h3><p>{r.requested_note?.includes('[추가 요청]') ? r.requested_note.split('[추가 요청]').slice(1).join('[추가 요청]').trim() || '없음' : r.requested_note && !r.requested_note.includes('[환자 정보]') ? r.requested_note : '없음'}</p></section>
       <h3 className="driver-section-title">운행 상태 변경</h3>
       <DispatchActions reservation={r} onChanged={() => { setRefresh(v => v + 1); onChanged() }} />
