@@ -1,5 +1,11 @@
 # Operational readiness work
 
+## 2026-11-21 readable labeled navigation
+
+- Sidebar navigation now uses large icon-over-label tiles with persistent names on narrow screens, distinct active color/border, visible keyboard focus, and meaningful icons. Long Korean menu names wrap at deliberate word boundaries. Narrow sidebars scroll so all existing role-appropriate menus remain reachable.
+- Driver tabs and header reservation/refresh controls show icons above visible names, with larger touch targets. Existing role visibility and navigation actions remain unchanged; no database work.
+- Build/lint passed with existing warnings. Production dpl_GnJoeNB6SAf8aAvnhLyCydUNLTKj READY with k119 alias. Browser verified desktop tiles and balanced labels, phone driver tabs, today/future navigation, reservation shortcut and narrow sidebar labels at 390px. Restored normal viewport after inspection.
+
 ## 2026-11-21 boss daily dispatch history
 
 - Added 금일 배차 내역 below the pending-dispatch cards in boss.html. It reads today's scheduled bookings in KST, includes confirmed/in-progress/completed/external dispatches, orders scheduled_at descending with stable ID ordering, and groups by hour. Cancelled/unassigned requests and future-day bookings are excluded.

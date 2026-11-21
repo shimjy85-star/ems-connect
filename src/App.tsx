@@ -14,13 +14,13 @@ import { ReservationChanges } from './ReservationChanges'
 
 type NavItem = {
   label: string
-  icon: 'grid' | 'calendar' | 'history'
+  icon: 'grid' | 'calendar' | 'history' | 'dispatch' | 'ambulance' | 'driver' | 'hospital'
 }
 
 const mainNav: NavItem[] = [
   { label: '대시보드', icon: 'grid' },
   { label: '예약 관리', icon: 'calendar' },
-  { label: '타차량배차', icon: 'history' },
+  { label: '타차량배차', icon: 'dispatch' },
 ]
 
 const hospitalNav: NavItem[] = [mainNav[1]]
@@ -167,9 +167,9 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 
 function NavButton({ item, active, onClick }: { item: NavItem; active: boolean; onClick: () => void }) {
   return (
-    <button className={`nav-item${active ? ' active' : ''}`} onClick={onClick} type="button">
-      <Icon name={item.icon} size={18} />
-      <span>{item.label}</span>
+    <button className={`nav-item${active ? ' active' : ''}`} onClick={onClick} type="button" aria-label={item.label} aria-current={active ? 'page' : undefined}>
+      <Icon name={item.icon} size={26} />
+      <span>{item.label === '명일운행계획' ? <>명일운행<wbr />계획</> : item.label === '운행기록조회' ? <>운행기록<wbr />조회</> : item.label}</span>
     </button>
   )
 }
@@ -1385,9 +1385,9 @@ function App() {
 
         <nav className="sidebar-nav" aria-label="주 메뉴">
           <p className="nav-label">{dashboardIsAdmin ? '업무' : '병원 업무'}</p>
-          {dashboardIsAdmin && <a className="nav-item" href="/boss.html">사장님 간편 배차</a>}
+          {dashboardIsAdmin && <a className="nav-item" href="/boss.html"><Icon name="dispatch" size={26} /><span>사장님 간편 배차</span></a>}
           {sidebarNav.map((item) => <NavButton key={item.label} item={item} active={activePage === item.label} onClick={() => setActivePage(item.label)} />)}
-          {profileRole === 'admin' && <><NavButton item={{ label: '금일운행', icon: 'calendar' }} active={activePage === '금일운행'} onClick={() => setActivePage('금일운행')} /><NavButton item={{ label: '명일운행계획', icon: 'calendar' }} active={activePage === '명일운행계획'} onClick={() => setActivePage('명일운행계획')} /><NavButton item={{ label: '운행기록조회', icon: 'history' }} active={activePage === '운행기록조회'} onClick={() => setActivePage('운행기록조회')} /><p className="nav-label">관리</p><NavButton item={{ label: '가입 승인', icon: 'history' }} active={activePage === '가입 승인'} onClick={() => setActivePage('가입 승인')} /><NavButton item={{ label: '업체별 이송내역', icon: 'calendar' }} active={activePage === '업체별 이송내역'} onClick={() => setActivePage('업체별 이송내역')} /></>}
+          {profileRole === 'admin' && <><NavButton item={{ label: '금일운행', icon: 'ambulance' }} active={activePage === '금일운행'} onClick={() => setActivePage('금일운행')} /><NavButton item={{ label: '명일운행계획', icon: 'calendar' }} active={activePage === '명일운행계획'} onClick={() => setActivePage('명일운행계획')} /><NavButton item={{ label: '운행기록조회', icon: 'history' }} active={activePage === '운행기록조회'} onClick={() => setActivePage('운행기록조회')} /><p className="nav-label">관리</p><NavButton item={{ label: '가입 승인', icon: 'driver' }} active={activePage === '가입 승인'} onClick={() => setActivePage('가입 승인')} /><NavButton item={{ label: '업체별 이송내역', icon: 'hospital' }} active={activePage === '업체별 이송내역'} onClick={() => setActivePage('업체별 이송내역')} /></>}
         </nav>
 
         <div className="sidebar-bottom">
@@ -1404,8 +1404,8 @@ function App() {
           <div className="breadcrumb"><span>{dashboardIsAdmin ? 'EMS 운영' : '병원 업무'}</span><span className="breadcrumb-divider">/</span><strong>{activePage}</strong></div>
           <div className="topbar-actions">
             <span className="today-label">{today}</span>
-            <button className="icon-button" type="button" aria-label="예약 목록 열기" title="예약 목록" onClick={() => setActivePage('예약 관리')}><Icon name="search" /></button>
-            <button className="icon-button" type="button" aria-label="현재 화면 새로고침" title="현재 화면 새로고침" onClick={() => setRefreshKey((value) => value + 1)} disabled={!session}><Icon name="refresh" /></button>
+            <button className="icon-button" type="button" aria-label="예약 목록 열기" title="예약 목록" onClick={() => setActivePage('예약 관리')}><Icon name="calendar" size={24} /><span>예약목록</span></button>
+            <button className="icon-button" type="button" aria-label="현재 화면 새로고침" title="현재 화면 새로고침" onClick={() => setRefreshKey((value) => value + 1)} disabled={!session}><Icon name="refresh" size={24} /><span>새로고침</span></button>
             <div className="topbar-divider" />
             <div className="top-avatar" aria-label={session ? profileName : '미로그인'}>{profileName.slice(0, 1) || '관'}</div>
           </div>
@@ -1413,7 +1413,7 @@ function App() {
 
         <div className="page-wrap">
           {tripLinkNotice && profileRole === 'admin' && <p role="status" className="form-error">{tripLinkNotice}</p>}
-          {profileRole === 'admin' && ['금일운행', '명일운행계획', '운행기록조회'].includes(activePage) && <nav className="driver-view-tabs" aria-label="기사 운행 메뉴"><button type="button" aria-pressed={activePage === '금일운행'} onClick={() => setActivePage('금일운행')}>금일운행</button><button type="button" aria-pressed={activePage === '명일운행계획'} onClick={() => setActivePage('명일운행계획')}>명일운행계획</button><button type="button" aria-pressed={activePage === '운행기록조회'} onClick={() => setActivePage('운행기록조회')}>운행기록조회</button></nav>}
+          {profileRole === 'admin' && ['금일운행', '명일운행계획', '운행기록조회'].includes(activePage) && <nav className="driver-view-tabs" aria-label="기사 운행 메뉴"><button type="button" aria-pressed={activePage === '금일운행'} onClick={() => setActivePage('금일운행')}><Icon name="ambulance" size={25} /><span>금일운행</span></button><button type="button" aria-pressed={activePage === '명일운행계획'} onClick={() => setActivePage('명일운행계획')}><Icon name="calendar" size={25} /><span>명일운행계획</span></button><button type="button" aria-pressed={activePage === '운행기록조회'} onClick={() => setActivePage('운행기록조회')}><Icon name="history" size={25} /><span>운행기록조회</span></button></nav>}
           {['금일운행','명일운행계획'].includes(activePage) && profileRole === 'admin' && session ? (<MyTrips key={activePage} future={activePage === '명일운행계획'} userId={session.user.id} onChanged={refreshProfile} refreshToken={refreshKey} />) : activePage === '운행기록조회' && profileRole === 'admin' && session ? (<TripHistory userId={session.user.id} refreshToken={refreshKey} />) : activePage === '업체별 이송내역' && profileRole === 'admin' ? (
             <HospitalTransferHistory refreshToken={refreshKey} />
           ) : activePage === '타차량배차' && profileRole === 'admin' ? (
