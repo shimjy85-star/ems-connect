@@ -1,5 +1,11 @@
 # Operational readiness work
 
+## 2026-11-21 boss daily dispatch history
+
+- Added 금일 배차 내역 below the pending-dispatch cards in boss.html. It reads today's scheduled bookings in KST, includes confirmed/in-progress/completed/external dispatches, orders scheduled_at descending with stable ID ordering, and groups by hour. Cancelled/unassigned requests and future-day bookings are excluded.
+- Large read-only cards show time, status, patient, hospital, route and short reservation ID. External dispatch uses amber styling. Existing dispatch controls remain separate. Independent loading/error handling prevents a history query failure from disabling dispatch. Realtime plus 5-second polling, visibility/online/focus refresh, full pagination, header refresh and local refresh are supported.
+- Build/lint and existing date/notification checks passed (previous effect/bundle warnings remain). Production dpl_2kKRvW26GMM1moKaPpkNz4jTaAb5 READY on k119.vercel.app. Browser verified today's existing completed simulation booking, KST date/hour/status details, both refresh controls and 390px phone layout. No reservations or database permissions were changed for this feature/test. Today's live sample contained one record; descending ordering is enforced by the database query.
+
 ## 2026-11-21 future driver schedules and push delay
 
 - Added admin-driver menu/tab and direct hash `#upcoming-trips` for 명일운행계획. It reads only this driver's confirmed/in-progress bookings from tomorrow 00:00 KST onward, orders earliest first, groups by KST date, defaults to collapsed cards, and preserves phone links. Today remains latest-first. Future cards provide review only; operational status/photo upload controls remain in today's view.

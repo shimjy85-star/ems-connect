@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import './BossDispatch.css'
+import { BossTodayDispatch } from './BossTodayDispatch'
 
 type Row = { id: string; hospital_id: string; departure_address: string; destination_address: string; scheduled_at: string; created_at: string; updated_at: string; requested_note: string | null; status: string; trip_type: string | null; waiting_required: boolean | null; waiting_minutes: number | null }
 type Choice = '9090' | 'external_dispatch' | 'cancelled'
@@ -91,6 +92,7 @@ export function BossDispatch({ onSignOut }: { onSignOut: () => void }) {
     {selected ? <section className="boss-card boss-confirm" aria-label="배차 최종 확인"><h2>{choiceLabel[selected.choice]} 하시겠습니까?</h2><p>{hospitals[selected.row.hospital_id]} · {patient(selected.row)}</p><strong>{time(selected.row.scheduled_at)}</strong><p>출발: {selected.row.departure_address}</p><p>도착: {selected.row.destination_address}</p><p>{selected.choice === '9090' ? '71나9090 · 심재용 기사에게 배차합니다.' : selected.choice === 'external_dispatch' ? '타차량배차 목록으로 옮깁니다. 다른 기사에게는 직접 연락해 주세요.' : '예약이 취소됩니다. 내용을 다시 확인해 주세요.'}</p><button className={selected.choice === 'cancelled' ? 'boss-danger' : 'boss-primary'} disabled={busy || !!error && !rows.length} onClick={() => void confirm()}>{busy ? '처리 중입니다…' : `예, ${choiceLabel[selected.choice]} 확정`}</button><button disabled={busy} onClick={() => { setSelected(null); setError('') }}>아니요, 돌아가기</button></section>
       : loading ? <p className="boss-message">예약을 불러오는 중입니다…</p> : !rows.length && !error ? <section className="boss-card"><h2>배차할 예약이 없습니다.</h2><p>새 예약이 들어오면 여기에 표시됩니다.</p></section> : rows.map(r => <article className="boss-card" key={r.id}><p className="boss-hospital">{hospitals[r.hospital_id] || '병원 확인 필요'}</p><h2>{patient(r)}</h2><p className="boss-time">{time(r.scheduled_at)}</p><dl><dt>출발</dt><dd>{r.departure_address}</dd><dt>도착</dt><dd>{r.destination_address}</dd></dl><p>{r.trip_type === 'round_trip' ? '왕복' : r.trip_type === 'one_way' ? '편도' : '운행 유형 확인 필요'} · {r.waiting_required ? `현장 대기 ${r.waiting_minutes ?? 0}분` : r.waiting_required === false ? '현장 대기 없음' : '대기 여부 확인 필요'}</p><details><summary>연락처·환자 요청 확인</summary><p className="boss-notes">{r.requested_note || '추가 요청 없음'}</p></details>
         {expired(r) ? <p>24시간 경과 · 자동 취소 확인 중</p> : <div className="boss-choices"><button className="boss-primary" disabled={!!error} onClick={() => { setSelected({ row: r, choice: '9090' }); setResult('') }}>9090 배차</button><button className="boss-external" disabled={!!error} onClick={() => { setSelected({ row: r, choice: 'external_dispatch' }); setResult('') }}>타차량 배차</button><button className="boss-cancel" disabled={!!error} onClick={() => { setSelected({ row: r, choice: 'cancelled' }); setResult('') }}>예약 취소</button></div>}</article>)}
+    <BossTodayDispatch hospitals={hospitals} refreshToken={refresh} />
     <footer className="boss-footer"><a href="/">관리자 전체 화면</a><button disabled={busy} onClick={onSignOut}>로그아웃</button></footer>
   </main>
 }
