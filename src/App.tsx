@@ -9,6 +9,7 @@ import { ExternalDispatch } from './ExternalDispatch'
 import { BossDispatch } from './BossDispatch'
 import { TripHistory } from './TripHistory'
 import { HospitalPhotoAlerts } from './HospitalPhotoAlerts'
+import { koreaDay, tripDayBounds, tripPage } from './lib/tripDates'
 import { ReservationChanges } from './ReservationChanges'
 
 type NavItem = {
@@ -907,8 +908,8 @@ function MobileAppTools() {
   </section>
 }
 
-function MyTrips({ userId, onChanged, refreshToken }: { userId: string; onChanged: () => void; refreshToken: number }) {
-  const [day, setDay] = useState(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()))
+function MyTrips({ userId, onChanged, refreshToken, future = false }: { userId: string; onChanged: () => void; refreshToken: number; future?: boolean }) {
+  const [day, setDay] = useState(() => koreaDay())
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [rows, setRows] = useState<ReservationRow[]>([])
   const [error, setError] = useState('')
@@ -917,49 +918,65 @@ function MyTrips({ userId, onChanged, refreshToken }: { userId: string; onChange
   const [limit, setLimit] = useState(50)
   useEffect(() => {
     let active = true
+    let fetching = false
     const load = async () => {
-      if (!supabase) return
+      if (!supabase || fetching) return
+      const currentDay = koreaDay()
+      if (currentDay !== day) { setDay(currentDay); return }
+      fetching = true
       try {
-        const result = await supabase.from('reservations').select(reservationColumns)
+        const bounds = tripDayBounds(currentDay)
+        let query = supabase.from('reservations').select(reservationColumns)
           .eq('driver_id', userId).in('status', ['confirmed', 'in_progress'])
-          .gte('scheduled_at', new Date(`${day}T00:00:00+09:00`).toISOString())
-          .lt('scheduled_at', new Date(new Date(`${day}T00:00:00+09:00`).getTime()+86400000).toISOString())
-          .order('scheduled_at', { ascending: false }).order('id').limit(limit)
+        query = future ? query.gte('scheduled_at', bounds.end) : query.gte('scheduled_at', bounds.start).lt('scheduled_at', bounds.end)
+        const result = await query.order('scheduled_at', { ascending: future }).order('id').limit(limit)
         if (!active) return
         if (result.error) throw result.error
         setRows(result.data ?? []); setError('')
       } catch { if (active) setError('운행 목록을 갱신하지 못했습니다. 새로고침해 주세요.') }
-      finally { if (active) setLoading(false) }
+      finally { fetching = false; if (active) setLoading(false) }
     }
     void load()
-    const timer = window.setInterval(() => { setDay(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())); void load() }, 5000)
-    const channel = supabase?.channel(`my-trips-${userId}`).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'reservations' }, () => void load()).subscribe()
-    return () => { active = false; window.clearInterval(timer); if (channel) void supabase?.removeChannel(channel) }
-  }, [userId, refresh, limit, refreshToken, day])
-  return <section className="panel my-trips"><h1>금일운행 · 71나9090</h1><p>{day} · 출발시각이 늦은 운행부터 표시합니다. 완료 건은 운행기록조회에서 확인하세요.</p>
+    const timer = window.setInterval(() => void load(), 5000)
+    const resume = () => { if (document.visibilityState === 'visible') void load() }
+    document.addEventListener('visibilitychange', resume); window.addEventListener('online', resume); window.addEventListener('focus', resume)
+    const channel = supabase?.channel(`my-trips-${userId}-${future}`).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'reservations' }, () => void load()).subscribe()
+    return () => { active = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', resume); window.removeEventListener('online', resume); window.removeEventListener('focus', resume); if (channel) void supabase?.removeChannel(channel) }
+  }, [userId, refresh, limit, refreshToken, day, future])
+  const isCollapsed = (id: string) => collapsed[id] ?? future
+  return <section className="panel my-trips"><h1>{future ? '명일운행계획' : '금일운행'} · 71나9090</h1><p>{future ? '내일과 이후 배차된 일정입니다. 가까운 날짜부터 표시하며 운행 당일에는 금일운행에 자동 표시됩니다.' : `${day} · 출발시각이 늦은 운행부터 표시합니다. 완료 건은 운행기록조회에서 확인하세요.`}</p>
     <details className="driver-settings"><summary>앱 설치 · 알림 설정</summary><MobileAppTools /></details>
     <button type="button" className="subtle-button" onClick={() => setRefresh(v => v + 1)}>새로고침</button>
     {error && <p className="form-error" role="alert">{error}</p>}
-    {loading ? <p>불러오는 중…</p> : !rows.length && !error ? <p>현재 배정된 운행이 없습니다.</p> : rows.map(r => <article className="trip-card" key={r.id}>
-      <header className="driver-card-header"><span className={`status-pill status-${r.status}`}>{r.status === 'in_progress' ? r.trip_phase === 'moving' ? '이동중' : '이송중' : statusLabels[r.status]}</span><span className="driver-reference">#{r.id.slice(0, 8).toUpperCase()}</span><div className="driver-name-row"><h2>{patientNameFromNote(r.requested_note) || '환자명 확인 필요'}</h2><button type="button" aria-expanded={!collapsed[r.id]} aria-controls={`trip-info-${r.id}`} onClick={() => setCollapsed(current=>({...current,[r.id]:!current[r.id]}))}>{collapsed[r.id]?'펼치기':'접기'}</button></div><p className="driver-departure-time"><span>출발 시각</span><strong>{formatScheduledAt(r.scheduled_at)}</strong></p></header>
-      <div id={`trip-info-${r.id}`} hidden={!!collapsed[r.id]}>
+    {loading ? <p>불러오는 중…</p> : !rows.length && !error ? <p>{future ? '내일 이후 배정된 운행이 없습니다.' : '현재 배정된 운행이 없습니다.'}</p> : rows.map((r,index) => <div key={r.id}>
+      {future && (index === 0 || koreaDay(rows[index-1].scheduled_at) !== koreaDay(r.scheduled_at)) && <h2 className="trip-plan-date">{new Date(r.scheduled_at).toLocaleDateString('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'short'})}</h2>}
+      <article className="trip-card">
+      <header className="driver-card-header"><span className={`status-pill status-${r.status}`}>{r.status === 'in_progress' ? r.trip_phase === 'moving' ? '이동중' : '이송중' : statusLabels[r.status]}</span><span className="driver-reference">#{r.id.slice(0, 8).toUpperCase()}</span><div className="driver-name-row"><h2>{patientNameFromNote(r.requested_note) || '환자명 확인 필요'}</h2><button type="button" aria-expanded={!isCollapsed(r.id)} aria-controls={`trip-info-${r.id}`} onClick={() => setCollapsed(current=>({...current,[r.id]:!(current[r.id] ?? future)}))}>{isCollapsed(r.id)?'펼치기':'접기'}</button></div><p className="driver-departure-time"><span>출발 시각</span><strong>{formatScheduledAt(r.scheduled_at)}</strong></p></header>
+      <div id={`trip-info-${r.id}`} hidden={isCollapsed(r.id)}>
       <dl className="driver-route"><div><dt>출발지</dt><dd>{r.departure_address}</dd></div><div><dt>목적지</dt><dd>{r.destination_address}</dd></div></dl>
       <section className="driver-information" aria-label="환자 및 이송 정보"><h3>연락처 · 이송 정보</h3><dl><div className="driver-phone"><dt>보호자 연락처</dt><dd><GuardianPhone note={r.requested_note} /></dd></div><div><dt>운행 유형</dt><dd>{r.trip_type === 'round_trip' ? '왕복' : r.trip_type === 'one_way' ? '편도' : '확인 필요'}</dd></div><div><dt>현장 대기</dt><dd>{r.waiting_required ? `필요 · ${r.waiting_minutes ?? 0}분` : r.waiting_required === false ? '없음' : '확인 필요'}</dd></div><div className={noteValue(r.requested_note, '감염 여부') !== '없음' ? 'driver-caution' : ''}><dt>감염 여부</dt><dd>{noteValue(r.requested_note, '감염 여부') || '확인 필요'}</dd></div><div className={noteValue(r.requested_note, '산소 사용 여부') === '필요' ? 'driver-caution' : ''}><dt>산소</dt><dd>{noteValue(r.requested_note, '산소 사용 여부') || '확인 필요'}</dd></div><div><dt>동승</dt><dd>{noteValue(r.requested_note, '동승 여부') || '확인 필요'}</dd></div></dl></section>
       <section className="driver-extra"><h3>추가 요청</h3><p>{r.requested_note?.includes('[추가 요청]') ? r.requested_note.split('[추가 요청]').slice(1).join('[추가 요청]').trim() || '없음' : r.requested_note && !r.requested_note.includes('[환자 정보]') ? r.requested_note : '없음'}</p></section>
-      <h3 className="driver-section-title">운행 상태 변경</h3>
+      {!future && <><h3 className="driver-section-title">운행 상태 변경</h3>
       <DispatchActions reservation={r} onChanged={() => { setRefresh(v => v + 1); onChanged() }} />
       <h3 className="driver-section-title">운행 사진</h3>
-      <TripPhoto id={r.id} upload />
+      <TripPhoto id={r.id} upload /></>}
+      {future && <p className="trip-plan-info">운행 당일에 금일운행에서 이동중·이송중·완료를 처리하세요.</p>}
       </div>
-    </article>)}
+    </article></div>)}
     {rows.length === limit && <button type="button" className="subtle-button" onClick={() => setLimit(v => v + 50)}>다음 운행 더 보기</button>}
   </section>
 }
 
 function App() {
-  const [adminActivePage, setAdminActivePage] = useState(() => window.location.hash === '#my-trips' ? '금일운행' : '대시보드')
+  const [adminActivePage, setAdminActivePage] = useState(() => window.location.hash === '#upcoming-trips' ? '명일운행계획' : window.location.hash.startsWith('#driver-trip/') || window.location.hash === '#my-trips' ? '금일운행' : '대시보드')
+  const [tripLink, setTripLink] = useState(() => window.location.hash)
+  const [tripLinkNotice, setTripLinkNotice] = useState('')
   useEffect(() => {
-    const openTrips = () => { if (window.location.hash === '#my-trips') setAdminActivePage('금일운행') }
+    const openTrips = () => {
+      setTripLink(window.location.hash)
+      if (window.location.hash === '#my-trips') setAdminActivePage('금일운행')
+      if (window.location.hash === '#upcoming-trips') setAdminActivePage('명일운행계획')
+    }
     window.addEventListener('hashchange', openTrips)
     const onMessage = (event: MessageEvent) => { if (event.data?.type === 'OPEN_MY_TRIPS') setAdminActivePage('금일운행') }
     navigator.serviceWorker?.addEventListener('message', onMessage)
@@ -1004,6 +1021,21 @@ function App() {
     day: 'numeric',
     weekday: 'long',
   }).format(new Date()))
+
+  useEffect(() => {
+    const id = tripLink.match(/^#driver-trip\/([0-9a-f-]{36})$/i)?.[1]
+    const client = supabase
+    if (!id || !client || !session || profileRole !== 'admin' || profileState !== 'ready') return
+    let active = true
+    void client.from('reservations').select('scheduled_at,status').eq('id',id).eq('driver_id',session.user.id).maybeSingle().then(({data,error})=>{
+      if (!active) return
+      if (error) { setTripLinkNotice('알림의 예약을 확인하지 못했습니다. 새로고침하거나 명일운행계획을 확인해 주세요.'); return }
+      if (!data) { setTripLinkNotice('배차가 취소되었거나 현재 계정에 배정되지 않은 예약입니다.'); return }
+      setTripLinkNotice('')
+      setAdminActivePage(tripPage(data.scheduled_at,data.status))
+    })
+    return () => { active = false }
+  },[tripLink,session,profileRole,profileState])
 
   useEffect(() => {
     const client = supabase
@@ -1338,7 +1370,7 @@ function App() {
   }
 
   return (
-    <div className={`app-shell${['금일운행', '운행기록조회'].includes(activePage) ? ' driver-mode' : ''}`}>
+    <div className={`app-shell${['금일운행', '명일운행계획', '운행기록조회'].includes(activePage) ? ' driver-mode' : ''}`}>
       {session && profileHospitalId && ['hospital_admin','hospital_staff'].includes(profileRole) && <HospitalPhotoAlerts key={`${session.user.id}-${profileHospitalId}`} userId={session.user.id} hospitalId={profileHospitalId} />}
       <aside className="sidebar">
         <a className="brand" href={dashboardIsAdmin ? '#dashboard' : '#reservations'} onClick={() => setActivePage(dashboardIsAdmin ? '대시보드' : '예약 관리')}>
@@ -1355,7 +1387,7 @@ function App() {
           <p className="nav-label">{dashboardIsAdmin ? '업무' : '병원 업무'}</p>
           {dashboardIsAdmin && <a className="nav-item" href="/boss.html">사장님 간편 배차</a>}
           {sidebarNav.map((item) => <NavButton key={item.label} item={item} active={activePage === item.label} onClick={() => setActivePage(item.label)} />)}
-          {profileRole === 'admin' && <><NavButton item={{ label: '금일운행', icon: 'calendar' }} active={activePage === '금일운행'} onClick={() => setActivePage('금일운행')} /><NavButton item={{ label: '운행기록조회', icon: 'history' }} active={activePage === '운행기록조회'} onClick={() => setActivePage('운행기록조회')} /><p className="nav-label">관리</p><NavButton item={{ label: '가입 승인', icon: 'history' }} active={activePage === '가입 승인'} onClick={() => setActivePage('가입 승인')} /><NavButton item={{ label: '업체별 이송내역', icon: 'calendar' }} active={activePage === '업체별 이송내역'} onClick={() => setActivePage('업체별 이송내역')} /></>}
+          {profileRole === 'admin' && <><NavButton item={{ label: '금일운행', icon: 'calendar' }} active={activePage === '금일운행'} onClick={() => setActivePage('금일운행')} /><NavButton item={{ label: '명일운행계획', icon: 'calendar' }} active={activePage === '명일운행계획'} onClick={() => setActivePage('명일운행계획')} /><NavButton item={{ label: '운행기록조회', icon: 'history' }} active={activePage === '운행기록조회'} onClick={() => setActivePage('운행기록조회')} /><p className="nav-label">관리</p><NavButton item={{ label: '가입 승인', icon: 'history' }} active={activePage === '가입 승인'} onClick={() => setActivePage('가입 승인')} /><NavButton item={{ label: '업체별 이송내역', icon: 'calendar' }} active={activePage === '업체별 이송내역'} onClick={() => setActivePage('업체별 이송내역')} /></>}
         </nav>
 
         <div className="sidebar-bottom">
@@ -1380,8 +1412,9 @@ function App() {
         </header>
 
         <div className="page-wrap">
-          {profileRole === 'admin' && ['금일운행', '운행기록조회'].includes(activePage) && <nav className="driver-view-tabs" aria-label="기사 운행 메뉴"><button type="button" aria-pressed={activePage === '금일운행'} onClick={() => setActivePage('금일운행')}>금일운행</button><button type="button" aria-pressed={activePage === '운행기록조회'} onClick={() => setActivePage('운행기록조회')}>운행기록조회</button></nav>}
-          {activePage === '금일운행' && profileRole === 'admin' && session ? (<MyTrips userId={session.user.id} onChanged={refreshProfile} refreshToken={refreshKey} />) : activePage === '운행기록조회' && profileRole === 'admin' && session ? (<TripHistory userId={session.user.id} refreshToken={refreshKey} />) : activePage === '업체별 이송내역' && profileRole === 'admin' ? (
+          {tripLinkNotice && profileRole === 'admin' && <p role="status" className="form-error">{tripLinkNotice}</p>}
+          {profileRole === 'admin' && ['금일운행', '명일운행계획', '운행기록조회'].includes(activePage) && <nav className="driver-view-tabs" aria-label="기사 운행 메뉴"><button type="button" aria-pressed={activePage === '금일운행'} onClick={() => setActivePage('금일운행')}>금일운행</button><button type="button" aria-pressed={activePage === '명일운행계획'} onClick={() => setActivePage('명일운행계획')}>명일운행계획</button><button type="button" aria-pressed={activePage === '운행기록조회'} onClick={() => setActivePage('운행기록조회')}>운행기록조회</button></nav>}
+          {['금일운행','명일운행계획'].includes(activePage) && profileRole === 'admin' && session ? (<MyTrips key={activePage} future={activePage === '명일운행계획'} userId={session.user.id} onChanged={refreshProfile} refreshToken={refreshKey} />) : activePage === '운행기록조회' && profileRole === 'admin' && session ? (<TripHistory userId={session.user.id} refreshToken={refreshKey} />) : activePage === '업체별 이송내역' && profileRole === 'admin' ? (
             <HospitalTransferHistory refreshToken={refreshKey} />
           ) : activePage === '타차량배차' && profileRole === 'admin' ? (
             <ExternalDispatch refreshToken={refreshKey} />

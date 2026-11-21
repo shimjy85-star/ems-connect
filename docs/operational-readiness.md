@@ -1,5 +1,16 @@
 # Operational readiness work
 
+## 2026-11-21 future driver schedules and push delay
+
+- Added admin-driver menu/tab and direct hash `#upcoming-trips` for 명일운행계획. It reads only this driver's confirmed/in-progress bookings from tomorrow 00:00 KST onward, orders earliest first, groups by KST date, defaults to collapsed cards, and preserves phone links. Today remains latest-first. Future cards provide review only; operational status/photo upload controls remain in today's view.
+- A single original reservation is queried by date; no copying or scheduled database migration is needed at midnight. Both screens reevaluate KST day while polling and on focus/visibility/network return. Existing reservation RLS and data are preserved.
+- Push service worker now routes the notification's validated reservation UUID to `#driver-trip/:id`. After authentication the app queries only the signed-in driver's booking and selects today's/future/history view using its latest schedule/status. No patient details or schedule is put in push payloads. Old payloads fall back safely to today; cancelled/reassigned IDs show a notice.
+- Investigated the user-reported consideration-hospital dispatch: queue created 2026-11-21 11:12:25Z; sent_at 11:13:01.967Z; one registered endpoint accepted. This is about 37 seconds of server delay and proves service acceptance only, not handset display. Date was not a delivery condition.
+- Applied push-immediate.sql to schedule the existing worker through pg_net after a dispatch/change/cancellation commits. Kept minute cron retry fallback; scheduling failures do not fail reservation updates. No secret or authentication/permission changes. verify-push-immediate.sql passed in a rollback-only transaction, including assertion that the HTTP queue increased.
+- Build/lint passed with existing effect/bundle warnings. scripts/verify-driver-plans.mjs passed KST midnight, year/leap-date boundaries, future-to-today routing, completed routing, service-worker notification navigation and untrusted/legacy fallback cases.
+- Production dpl_EmZq9YoXYzrF4dBKufdF3t3rMPA1 READY, k119 alias verified. Browser verified the real simulated Kim booking in the future date group, expanding/collapsing, telephone URL, no future operational controls, today's empty list, mobile 390px layout, and cold-loading notification hash selecting the future view after login restoration. Midnight is covered by deterministic date tests, not a real-time overnight browser session. Handset receipt remains user-confirmed only.
+- Requeued only the still-confirmed simulation dispatch notification, without changing its reservation/status. Manual worker invocation request 3627; sent_at 2026-11-21T11:28:43.530Z, one accepted endpoint, 0.41 seconds from the requeue timestamp. Real-trigger HTTP scheduling is separately proven by the rollback assertion above. Asked the user to refresh the phone app and verify the new menu/booking; no answer had arrived at verification completion.
+
 ## 2026-11-21 hospital photo arrival alerts
 
 - Applied `supabase/photo-arrival.sql`: additive reservation photo timestamp, backfill from existing private photo objects, and SECURITY INVOKER recording RPC. Existing RLS policies and photo access remain unchanged. Only the active assigned 9090 admin-driver can record arrivals through the RPC.
