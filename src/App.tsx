@@ -109,7 +109,7 @@ function localDateTimeValue(date: Date) {
 
 const statusLabels: Record<ReservationStatus, string> = {
   requested: '접수',
-  approval_pending: '승인 대기',
+  approval_pending: '접수',
   confirmed: '배차완료',
   external_dispatch: '타차량 배차',
   in_progress: '운행 중',
@@ -775,7 +775,8 @@ function ReservationManagement({
   const filteredReservations = reservations.filter((reservation) => {
     if (profileRole === 'admin' && reservation.status === 'external_dispatch') return false
     const matchesSearch = `${reservation.id} ${patientNameFromNote(reservation.requested_note)} ${reservation.departure_address} ${reservation.destination_address}`.toLowerCase().includes(searchText.toLowerCase())
-    return matchesSearch && (statusFilter === 'all' || reservation.status === statusFilter) && (photoFilter === 'all' || (photoFilter === 'with' ? !!reservation.photo_uploaded_at : !reservation.photo_uploaded_at))
+    const matchesStatus = statusFilter === 'all' || reservation.status === statusFilter || (statusFilter === 'requested' && reservation.status === 'approval_pending')
+    return matchesSearch && matchesStatus && (photoFilter === 'all' || (photoFilter === 'with' ? !!reservation.photo_uploaded_at : !reservation.photo_uploaded_at))
   })
 
   return (
@@ -795,7 +796,7 @@ function ReservationManagement({
           <div className="reservation-filters">
             <select aria-label="사진 첨부 필터" value={photoFilter} onChange={e=>setPhotoFilter(e.target.value)}><option value="all">사진 전체</option><option value="with">사진 있는 건</option><option value="without">사진 없는 건</option></select>
             <label className="search-field"><Icon name="search" size={16} /><input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="주소 또는 예약 번호 검색" /></label>
-            <select aria-label="예약 상태 필터" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">전체 상태</option>{Object.entries(statusLabels).filter(([value]) => profileRole !== 'admin' || value !== 'external_dispatch').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+            <select aria-label="예약 상태 필터" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">전체 상태</option>{Object.entries(statusLabels).filter(([value]) => value !== 'approval_pending' && (profileRole !== 'admin' || value !== 'external_dispatch')).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
           </div>
         </div>
         <div className="table-wrap">

@@ -1,5 +1,9 @@
 # Operational readiness work
 
+## 2026-11-22 reservation status wording
+
+- Removed approval_pending from the reservation status dropdown. Legacy values display and filter as 접수 without modifying the database enum or records. Signup approval wording and access are unchanged. Build passed; production dpl_2AzU4BSmbHZMo7SkvTyPmufNAfw9 READY. Browser verified the reservation dropdown contains 전체 상태/접수/배차완료/운행 중/이송완료/반려/취소 for admins, with no 승인 대기 option.
+
 ## 2026-11-22 simulation cleanup completed
 
 - User requested removal of all accumulated simulation/test operational data and confirmed the reviewed permanent-deletion scope at action time. Deleted exactly the three tracked simulations plus the original fake booking, their 2 private Storage photos, 3 reservation-change records and 3 push-queue records. No other reservation existed at the preflight check. Photos were removed through Storage UI, then booking/history deletion committed atomically using explicit UUIDs and marker guards.
