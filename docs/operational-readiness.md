@@ -1,5 +1,11 @@
 # Operational readiness work
 
+## 2026-11-22 simulation cleanup completed
+
+- User requested removal of all accumulated simulation/test operational data and confirmed the reviewed permanent-deletion scope at action time. Deleted exactly the three tracked simulations plus the original fake booking, their 2 private Storage photos, 3 reservation-change records and 3 push-queue records. No other reservation existed at the preflight check. Photos were removed through Storage UI, then booking/history deletion committed atomically using explicit UUIDs and marker guards.
+- Post-delete queries verified zero remaining target reservations, photos, reservation changes, activity logs, site notifications, dispatch checks and push records. Six hospitals and one handset push subscription remain; no account, vehicle, driver, original table, policy or application code was changed. Boss UI refresh verified no pending bookings and no daily dispatch history.
+- Local simulation ledgers marked deleted/completed. Earlier notes saying simulations are active or the original fake fixture is reusable are superseded. The historical verify-*.sql scripts depend on that now-deleted fake booking and must not be treated as runnable live checks without a separately authorized fixture. Historical screenshots/downloaded spreadsheets are development artifacts, not live reservations, and were outside the reviewed database cleanup scope. No app redeployment was needed.
+
 ## 2026-11-21 readable labeled navigation
 
 - Sidebar navigation now uses large icon-over-label tiles with persistent names on narrow screens, distinct active color/border, visible keyboard focus, and meaningful icons. Long Korean menu names wrap at deliberate word boundaries. Narrow sidebars scroll so all existing role-appropriate menus remain reachable.
