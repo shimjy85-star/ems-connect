@@ -150,6 +150,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     driver: <><circle cx="12" cy="8" r="4" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" /></>,
     hospital: <><path d="M4 21V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16M9 21v-4h6v4M12 7v6M9 10h6" /></>,
     history: <><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8" /><path d="M3 3v5h5m4-1v5l3 2" /></>,
+    menu: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M5.5 8h1M5.5 12h1M5.5 16h1" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.7a8 8 0 0 1-1.5.9l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.5-.9l-1.7.7-1.4-2.4 1.4-1.1a7 7 0 0 1 0-1.8l-1.4-1.1 1.4-2.4 1.7.7a8 8 0 0 1 1.5-.9l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.5.9l1.7-.7 1.4 2.4-1.4 1.1a7 7 0 0 1 0 1.8Z" /></>,
     route: <><circle cx="6" cy="18" r="2" /><circle cx="18" cy="6" r="2" /><path d="M8 18h4a4 4 0 0 0 4-4V10a4 4 0 0 1 4-4" /></>,
     search: <><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 5 5" /></>,
@@ -969,6 +970,14 @@ function MyTrips({ userId, onChanged, refreshToken, future = false }: { userId: 
 }
 
 function App() {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('ems-sidebar-collapsed-v1') === 'true' } catch { return false }
+  })
+  function toggleSidebar() {
+    const next = !sidebarCollapsed
+    setSidebarCollapsed(next)
+    try { localStorage.setItem('ems-sidebar-collapsed-v1', String(next)) } catch { /* Keep working without saved preferences. */ }
+  }
   const [adminActivePage, setAdminActivePage] = useState(() => window.location.hash === '#upcoming-trips' ? '명일운행계획' : window.location.hash.startsWith('#driver-trip/') || window.location.hash === '#my-trips' ? '금일운행' : '대시보드')
   const [tripLink, setTripLink] = useState(() => window.location.hash)
   const [tripLinkNotice, setTripLinkNotice] = useState('')
@@ -1371,9 +1380,9 @@ function App() {
   }
 
   return (
-    <div className={`app-shell${['금일운행', '명일운행계획', '운행기록조회'].includes(activePage) ? ' driver-mode' : ''}`}>
+    <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}${['금일운행', '명일운행계획', '운행기록조회'].includes(activePage) ? ' driver-mode' : ''}`}>
       {session && profileHospitalId && ['hospital_admin','hospital_staff'].includes(profileRole) && <HospitalPhotoAlerts key={`${session.user.id}-${profileHospitalId}`} userId={session.user.id} hospitalId={profileHospitalId} />}
-      <aside className="sidebar">
+      <aside className="sidebar" id="workspace-sidebar" hidden={sidebarCollapsed}>
         <a className="brand" href={dashboardIsAdmin ? '#dashboard' : '#reservations'} onClick={() => setActivePage(dashboardIsAdmin ? '대시보드' : '예약 관리')}>
           <span className="brand-mark"><Icon name="ambulance" size={22} /></span>
           <span className="brand-copy"><strong>EMS CONNECT</strong><small>응급 이송 통합 관리</small></span>
@@ -1402,7 +1411,7 @@ function App() {
 
       <main className="main-content">
         <header className="topbar">
-          <div className="breadcrumb"><span>{dashboardIsAdmin ? 'EMS 운영' : '병원 업무'}</span><span className="breadcrumb-divider">/</span><strong>{activePage}</strong></div>
+          <div className="topbar-left"><button className="icon-button sidebar-toggle" type="button" aria-expanded={!sidebarCollapsed} aria-controls="workspace-sidebar" onClick={toggleSidebar}><Icon name="menu" size={24} /><span>{sidebarCollapsed ? '메뉴 펼치기' : '메뉴 접기'}</span></button><div className="breadcrumb"><span>{dashboardIsAdmin ? 'EMS 운영' : '병원 업무'}</span><span className="breadcrumb-divider">/</span><strong>{activePage}</strong></div></div>
           <div className="topbar-actions">
             <span className="today-label">{today}</span>
             <button className="icon-button" type="button" aria-label="예약 목록 열기" title="예약 목록" onClick={() => setActivePage('예약 관리')}><Icon name="calendar" size={24} /><span>예약목록</span></button>

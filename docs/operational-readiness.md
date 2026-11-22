@@ -1,5 +1,11 @@
 # Operational readiness work
 
+## 2026-11-22 collapsible workspace menu
+
+- Added a labeled menu collapse/expand button in the header, outside the sidebar. The native hidden sidebar leaves the keyboard focus on the toggle; aria-expanded/aria-controls describe its state. Main content reclaims the sidebar width and removes the page-width cap while collapsed. Preference is saved locally when storage is available. Existing hidden mobile driver sidebar stays unchanged.
+- Browser verified hospital preview form expands from 397px to 507px when the 220px sidebar is hidden, with entered text retained through collapse and restoration. Reload retained collapsed preference. Cleared the UI-only test text; no database connection or test bookings were used. Live admin workspace verified width changes from 1011px to 1265px and restored its original menu state.
+- Build/lint passed with existing warnings. Production dpl_8fRWYks1eh1hBkdVPTrzpdRMmWnH READY on k119; disconnected hospital preview dpl_5ZH9srT9k1fyZXR5mWppaKnV1RRQ READY with no production aliases, opened in the right panel. No schema, data or access-policy changes.
+
 ## 2026-11-22 reservation status wording
 
 - Removed approval_pending from the reservation status dropdown. Legacy values display and filter as 접수 without modifying the database enum or records. Signup approval wording and access are unchanged. Build passed; production dpl_2AzU4BSmbHZMo7SkvTyPmufNAfw9 READY. Browser verified the reservation dropdown contains 전체 상태/접수/배차완료/운행 중/이송완료/반려/취소 for admins, with no 승인 대기 option.
