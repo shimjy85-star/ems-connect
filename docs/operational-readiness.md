@@ -1,5 +1,11 @@
 # Operational readiness work
 
+## 2026-11-23 Yuseong hospital added
+
+- Added exactly one active 유성요양병원 through add-yuseong-hospital.sql after inspecting required columns and confirming no existing exact/trimmed-name match. Address and phone remain null because they were not supplied. Existing hospitals, data, schema, RLS and accounts were preserved.
+- Related pages already read the shared hospitals table. Live browser verified 유성요양병원 in both actual pending-user approval hospital selectors (no account approved or changed), its new weekly transfer board and Excel button, and its monthly external-dispatch hospital total. All seven hospitals remain listed. Boss dispatch/history also use this shared table for names; no sample booking was created.
+- Data-only change; no application build or redeployment needed. Existing open screens need refresh/navigation to reload hospital names.
+
 ## 2026-11-22 collapsible workspace menu
 
 - Added a labeled menu collapse/expand button in the header, outside the sidebar. The native hidden sidebar leaves the keyboard focus on the toggle; aria-expanded/aria-controls describe its state. Main content reclaims the sidebar width and removes the page-width cap while collapsed. Preference is saved locally when storage is available. Existing hidden mobile driver sidebar stays unchanged.
